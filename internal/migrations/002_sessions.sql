@@ -1,0 +1,1 @@
+-- Server-side session table. See design doc §6.2.

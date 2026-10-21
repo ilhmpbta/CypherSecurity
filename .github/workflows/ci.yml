@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.15.0
+          args: --timeout=5m
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go mod tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+      - name: go vet
+        run: go vet ./...
+      - name: go test (race)
+        run: go test -race -count=1 ./...
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go build
+        run: go build ./...
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: securego/gosec@v2
+        with:
+          args: '-no-fail -fmt sarif -out results.sarif ./...'
+      - name: Upload SARIF (only when code scanning is available)
+        if: vars.ENABLE_CODE_SCANNING_UPLOAD == 'true'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+
+  academic-isolation:
+    name: Academic crypto isolation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Forbid crypto/academic imports outside benchmark/
+        run: |
+          # Any non-benchmark Go file importing crypto/academic fails CI.
+          matches=$(grep -rn --include='*.go' \
+            '"github.com/ilhmpbta/CypherSecurity/internal/crypto/academic"' \
+            . | grep -v '^./benchmark/' || true)
+          if [ -n "$matches" ]; then
+            echo "::error::crypto/academic imported outside benchmark/:"
+            echo "$matches"
+            exit 1
+          fi
+          echo "OK: academic crypto is confined to benchmark/"

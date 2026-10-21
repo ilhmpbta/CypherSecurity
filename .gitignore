@@ -1,0 +1,37 @@
+# Go build & test artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+coverage.txt
+coverage.html
+go.work
+go.work.sum
+
+# Secrets — never commit KEK material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local ciphertext storage (dev only)
+/data/
+/storage/
+
+# Keep fixture directories, ignore their contents
+benchmark/files/*
+!benchmark/files/.gitkeep
+testdata/*
+!testdata/.gitkeep
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

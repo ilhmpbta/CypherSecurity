@@ -1,0 +1,1 @@
+-- Initial schema. See design doc §5.2.
