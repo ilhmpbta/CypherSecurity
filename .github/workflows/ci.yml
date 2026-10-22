@@ -38,7 +38,11 @@ jobs:
       - name: go mod tidy check
         run: |
           go mod tidy
-          git diff --exit-code go.mod go.sum
+          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+            echo "::error::go mod tidy changed go.mod or go.sum. Commit the result."
+            git status --porcelain go.mod go.sum
+            exit 1
+          fi
       - name: go vet
         run: go vet ./...
       - name: go test (race)
@@ -63,9 +67,14 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: securego/gosec@v2
+      - uses: actions/setup-go@v5
         with:
-          args: '-no-fail -fmt sarif -out results.sarif ./...'
+          go-version-file: go.mod
+          cache: true
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
+      - name: Run gosec
+        run: gosec -no-fail -fmt sarif -out results.sarif ./...
       - name: Upload SARIF (only when code scanning is available)
         if: vars.ENABLE_CODE_SCANNING_UPLOAD == 'true'
         uses: github/codeql-action/upload-sarif@v3
