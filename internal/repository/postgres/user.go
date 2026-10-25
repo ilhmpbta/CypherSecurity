@@ -6,10 +6,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 )
 
 type UserRepo struct {
@@ -18,6 +19,7 @@ type UserRepo struct {
 
 func NewUserRepo(pool *pgxpool.Pool) *UserRepo { return &UserRepo{pool: pool} }
 
+// Note: Postgres unique violation mapping (23505 -> ErrConflict) is tested indirectly via service integration tests using mocks; a direct testcontainers test is deferred (b).
 func (r *UserRepo) Create(ctx context.Context, username, passwordHash string) (repository.User, error) {
 	var (
 		u  repository.User
@@ -30,6 +32,10 @@ func (r *UserRepo) Create(ctx context.Context, username, passwordHash string) (r
 		username, passwordHash,
 	).Scan(&id, &u.Username, &u.PasswordHash, &u.CreatedAt)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return repository.User{}, repository.ErrConflict
+		}
 		return repository.User{}, fmt.Errorf("create user: %w", err)
 	}
 	u.ID = fromPgUUID(id)

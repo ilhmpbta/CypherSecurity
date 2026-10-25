@@ -8,7 +8,10 @@ import (
 	"github.com/google/uuid"
 )
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound = errors.New("not found")
+	ErrConflict = errors.New("conflict")
+)
 
 type User struct {
 	ID           uuid.UUID
