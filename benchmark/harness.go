@@ -178,6 +178,7 @@ func runFixtureBenchmarks(b *testing.B, file string, payload []byte, scheme benc
 			ciphertextSize = size
 		}
 		b.StopTimer()
+		runtime.KeepAlive(benchmarkBytesSink)
 		elapsed := b.Elapsed()
 		record(Row{
 			Algorithm: scheme.algorithm, Mode: scheme.mode, File: file, Op: "encrypt",
@@ -200,6 +201,7 @@ func runFixtureBenchmarks(b *testing.B, file string, payload []byte, scheme benc
 			}
 		}
 		b.StopTimer()
+		runtime.KeepAlive(benchmarkBytesSink)
 		elapsed := b.Elapsed()
 		record(Row{
 			Algorithm: scheme.algorithm, Mode: scheme.mode, File: file, Op: "decrypt",
