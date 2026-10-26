@@ -32,9 +32,17 @@ func (h *RecordsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]any{
-		"records": records,
-	})
+	projected := make([]map[string]any, len(records))
+	for i, r := range records {
+		projected[i] = map[string]any{
+			"id":         r.ID,
+			"data_type":  r.DataType,
+			"payload":    r.Payload,
+			"created_at": r.CreatedAt,
+			"updated_at": r.UpdatedAt,
+		}
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"records": projected})
 }
 
 type recordRequest struct {
@@ -72,7 +80,13 @@ func (h *RecordsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusCreated, rec)
+	respondJSON(w, http.StatusCreated, map[string]any{
+		"id":         rec.ID,
+		"data_type":  rec.DataType,
+		"payload":    rec.Payload,
+		"created_at": rec.CreatedAt,
+		"updated_at": rec.UpdatedAt,
+	})
 }
 
 func (h *RecordsHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -116,7 +130,13 @@ func (h *RecordsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, http.StatusOK, rec)
+	respondJSON(w, http.StatusOK, map[string]any{
+		"id":         rec.ID,
+		"data_type":  rec.DataType,
+		"payload":    rec.Payload,
+		"created_at": rec.CreatedAt,
+		"updated_at": rec.UpdatedAt,
+	})
 }
 
 func (h *RecordsHandler) Delete(w http.ResponseWriter, r *http.Request) {

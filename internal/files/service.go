@@ -14,20 +14,27 @@ import (
 	"github.com/ilhmpbta/CypherSecurity/internal/storage"
 )
 
-// Service orchestrates upload, download, and authorization.
-type Service struct {
-	repo repository.FileRepo
-	fs   *storage.FS
-	km   *production.KeyManager
-	now  func() time.Time
+// AuditLogger defines the interface for recording audit events.
+type AuditLogger interface {
+	Log(ctx context.Context, e repository.AuditEvent) error
 }
 
-func NewService(repo repository.FileRepo, fs *storage.FS, km *production.KeyManager) *Service {
+// Service orchestrates upload, download, and authorization.
+type Service struct {
+	repo        repository.FileRepo
+	fs          *storage.FS
+	km          *production.KeyManager
+	auditLogger AuditLogger
+	now         func() time.Time
+}
+
+func NewService(repo repository.FileRepo, fs *storage.FS, km *production.KeyManager, auditLogger AuditLogger) *Service {
 	return &Service{
-		repo: repo,
-		fs:   fs,
-		km:   km,
-		now:  time.Now,
+		repo:        repo,
+		fs:          fs,
+		km:          km,
+		auditLogger: auditLogger,
+		now:         time.Now,
 	}
 }
 
@@ -135,6 +142,20 @@ func (s *Service) Upload(ctx context.Context, ownerID uuid.UUID, r io.Reader, co
 		return repository.File{}, err
 	}
 
+	if s.auditLogger != nil {
+		targetID := saved.ID.String()
+		_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+			ActorID:  &ownerID,
+			Action:   "files.upload",
+			TargetID: &targetID,
+			Metadata: map[string]any{
+				"original_name": originalName,
+				"size":          saved.PlaintextSize,
+				"content_type":  contentType,
+			},
+		})
+	}
+
 	return saved, nil
 }
 
@@ -159,6 +180,16 @@ func (s *Service) Download(ctx context.Context, id, ownerID uuid.UUID) (io.ReadC
 	if err != nil {
 		_ = blobReader.Close()
 		return nil, repository.File{}, err
+	}
+
+	if s.auditLogger != nil {
+		targetID := file.ID.String()
+		_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+			ActorID:  &ownerID,
+			Action:   "files.download",
+			TargetID: &targetID,
+			Metadata: map[string]any{"original_name": file.OriginalName},
+		})
 	}
 
 	rc := &decryptReadCloser{
@@ -194,6 +225,16 @@ func (s *Service) Delete(ctx context.Context, id, ownerID uuid.UUID) error {
 
 	if err := s.fs.Delete(file.StorageKey); err != nil {
 		return err
+	}
+
+	if s.auditLogger != nil {
+		targetID := id.String()
+		_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+			ActorID:  &ownerID,
+			Action:   "files.delete",
+			TargetID: &targetID,
+			Metadata: map[string]any{"original_name": file.OriginalName},
+		})
 	}
 
 	return nil

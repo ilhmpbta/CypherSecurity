@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -305,4 +306,49 @@ func TestFilesUploadSuccess(t *testing.T) {
 	router.ServeHTTP(rec, reqPost)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+func TestHealthzReturns200WhenCheckSucceeds(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Deps{
+		HealthCheck: func(ctx context.Context) error { return nil },
+	})
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "ok")
+}
+
+func TestHealthzReturns503WhenCheckFails(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Deps{
+		HealthCheck: func(ctx context.Context) error {
+			return errors.New("db unreachable")
+		},
+	})
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.Contains(t, rec.Body.String(), "degraded")
+}
+
+func TestHealthzReturns503OnTimeout(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Deps{
+		HealthCheck: func(ctx context.Context) error {
+			select {
+			case <-time.After(3 * time.Second):
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	})
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.Contains(t, rec.Body.String(), "degraded")
 }

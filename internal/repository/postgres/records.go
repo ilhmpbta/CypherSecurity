@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 )
 
 type PersonalRecordRepo struct {
@@ -95,19 +95,25 @@ func (r *PersonalRecordRepo) ListByOwner(ctx context.Context, ownerID uuid.UUID)
 }
 
 func (r *PersonalRecordRepo) UpdateForOwner(ctx context.Context, rec repository.PersonalRecord, ownerID uuid.UUID) (repository.PersonalRecord, error) {
+	var (
+		pid    pgtype.UUID
+		powner pgtype.UUID
+	)
 	err := r.pool.QueryRow(ctx,
 		`UPDATE personal_records
 		 SET data_type = $1, payload = $2, updated_at = now()
 		 WHERE id = $3 AND owner_id = $4
-		 RETURNING updated_at`,
+		 RETURNING id, owner_id, data_type, payload, created_at, updated_at`,
 		rec.DataType, rec.Payload, toPgUUID(rec.ID), toPgUUID(ownerID),
-	).Scan(&rec.UpdatedAt)
+	).Scan(&pid, &powner, &rec.DataType, &rec.Payload, &rec.CreatedAt, &rec.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return repository.PersonalRecord{}, repository.ErrNotFound
 	}
 	if err != nil {
 		return repository.PersonalRecord{}, fmt.Errorf("update personal record: %w", err)
 	}
+	rec.ID = fromPgUUID(pid)
+	rec.OwnerID = fromPgUUID(powner)
 	return rec, nil
 }
 
