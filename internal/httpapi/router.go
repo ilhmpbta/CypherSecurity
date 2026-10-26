@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/ilhmpbta/CypherSecurity/internal/config"
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi/handlers"
@@ -17,6 +20,7 @@ type Deps struct {
 	UserRepo     repository.UserRepo
 	SessionStore middleware.SessionStore
 	Config       *config.Config
+	HealthCheck  func(ctx context.Context) error
 }
 
 // NewRouter returns the root HTTP handler wiring all routes and middleware.
@@ -44,6 +48,16 @@ func NewRouter(deps Deps) http.Handler {
 
 	// Health check (no middleware, no rate limit, no CSRF)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		if deps.HealthCheck != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := deps.HealthCheck(ctx); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_ = json.NewEncoder(w).Encode(map[string]string{"status": "degraded", "error": "database unreachable"})
+				return
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))

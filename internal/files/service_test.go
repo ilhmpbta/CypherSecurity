@@ -17,6 +17,7 @@ import (
 	"github.com/ilhmpbta/CypherSecurity/internal/crypto/production"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 	"github.com/ilhmpbta/CypherSecurity/internal/storage"
+	"github.com/stretchr/testify/assert"
 )
 
 type fakeFileRepo struct {
@@ -80,7 +81,7 @@ func setupTestService(t *testing.T) (*Service, *storage.FS, string) {
 		t.Fatalf("production.New KeyManager: %v", err)
 	}
 	repo := newFakeFileRepo()
-	svc := NewService(repo, fs, km)
+	svc := NewService(repo, fs, km, nil)
 	return svc, fs, tmpDir
 }
 
@@ -259,14 +260,60 @@ func TestServiceInterruptedUpload(t *testing.T) {
 	if len(entries) > 0 {
 		t.Errorf("expected 0 files in storage root after failed upload, found %d", len(entries))
 	}
+}
 
-	files, err := svc.List(context.Background(), ownerID)
+type fakeAuditLogger struct {
+	events []repository.AuditEvent
+}
+
+func (f *fakeAuditLogger) Log(ctx context.Context, e repository.AuditEvent) error {
+	f.events = append(f.events, e)
+	return nil
+}
+
+func TestFilesServiceAuditEvents(t *testing.T) {
+	tmpDir := t.TempDir()
+	fs, err := storage.NewFS(tmpDir)
 	if err != nil {
-		t.Fatalf("List: %v", err)
+		t.Fatalf("NewFS: %v", err)
 	}
-	if len(files) > 0 {
-		t.Errorf("expected 0 files in repository, found %d", len(files))
+	kek := bytes.Repeat([]byte{0x42}, 32)
+	km, err := production.New(map[int][]byte{1: kek})
+	if err != nil {
+		t.Fatalf("KeyManager: %v", err)
 	}
+	repo := newFakeFileRepo()
+	auditLog := &fakeAuditLogger{}
+	svc := NewService(repo, fs, km, auditLog)
+	ownerID := uuid.New()
+
+	content := []byte("%PDF-1.4 test audit file")
+	file, err := svc.Upload(context.Background(), ownerID, bytes.NewReader(content), "application/pdf", "audit.pdf")
+	if err != nil {
+		t.Fatalf("Upload failed: %v", err)
+	}
+
+	rc, _, err := svc.Download(context.Background(), file.ID, ownerID)
+	if err != nil {
+		t.Fatalf("Download failed: %v", err)
+	}
+	_ = rc.Close()
+
+	err = svc.Delete(context.Background(), file.ID, ownerID)
+	if err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	actions := make(map[string]bool)
+	for _, e := range auditLog.events {
+		actions[e.Action] = true
+		assert.NotNil(t, e.ActorID)
+		assert.Equal(t, ownerID, *e.ActorID)
+	}
+
+	assert.True(t, actions["files.upload"], "expected files.upload audit event")
+	assert.True(t, actions["files.download"], "expected files.download audit event")
+	assert.True(t, actions["files.delete"], "expected files.delete audit event")
 }
 
 func TestServiceCrossUserAccess(t *testing.T) {

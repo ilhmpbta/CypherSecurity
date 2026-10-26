@@ -63,7 +63,7 @@ func TestRegisterAndLogin(t *testing.T) {
 	userRepo := newFakeUserRepo()
 	sessionRepo := newFakeSessionRepo()
 	sessionStore := NewSessionStore(sessionRepo)
-	svc := NewService(userRepo, sessionStore)
+	svc := NewService(userRepo, sessionStore, nil)
 
 	ctx := context.Background()
 
@@ -90,7 +90,7 @@ func TestLoginEnumerationEquivalence(t *testing.T) {
 	userRepo := newFakeUserRepo()
 	sessionRepo := newFakeSessionRepo()
 	sessionStore := NewSessionStore(sessionRepo)
-	svc := NewService(userRepo, sessionStore)
+	svc := NewService(userRepo, sessionStore, nil)
 	ctx := context.Background()
 
 	_, err := svc.Register(ctx, "bob", "Password123!")
@@ -113,7 +113,7 @@ func TestLoginThrottlingAndLockoutExpiry(t *testing.T) {
 	sessionStore := NewSessionStore(sessionRepo)
 
 	currentTime := time.Now()
-	svc := NewService(userRepo, sessionStore, WithServiceClock(func() time.Time { return currentTime }))
+	svc := NewService(userRepo, sessionStore, nil, WithServiceClock(func() time.Time { return currentTime }))
 	ctx := context.Background()
 
 	_, err := svc.Register(ctx, "dave", "Password123!")
@@ -154,7 +154,7 @@ func TestGCThrottleEvictsStaleBuckets(t *testing.T) {
 	sessionStore := NewSessionStore(sessionRepo)
 
 	currentTime := time.Now()
-	svc := NewService(userRepo, sessionStore, WithServiceClock(func() time.Time { return currentTime }))
+	svc := NewService(userRepo, sessionStore, nil, WithServiceClock(func() time.Time { return currentTime }))
 	ctx := context.Background()
 
 	// Create a bucket with failures=3 at T
@@ -223,7 +223,7 @@ func TestParallelLoginThrottle(t *testing.T) {
 	userRepo := newFakeUserRepo()
 	sessionRepo := newFakeSessionRepo()
 	sessionStore := NewSessionStore(sessionRepo)
-	svc := NewService(userRepo, sessionStore)
+	svc := NewService(userRepo, sessionStore, nil)
 	ctx := context.Background()
 
 	_, err := svc.Register(ctx, "eve", "Password123!")
@@ -257,4 +257,64 @@ func TestParallelLoginThrottle(t *testing.T) {
 	// Exactly 5 failed attempts should be processed and 5 should be throttled
 	assert.Equal(t, 5, invalidCount)
 	assert.Equal(t, 5, throttledCount)
+}
+
+type fakeAuditLogger struct {
+	events []repository.AuditEvent
+}
+
+func (f *fakeAuditLogger) Log(ctx context.Context, e repository.AuditEvent) error {
+	f.events = append(f.events, e)
+	return nil
+}
+
+func TestAuthServiceAuditEvents(t *testing.T) {
+	userRepo := newFakeUserRepo()
+	sessionRepo := newFakeSessionRepo()
+	sessionStore := NewSessionStore(sessionRepo)
+	auditLog := &fakeAuditLogger{}
+	svc := NewService(userRepo, sessionStore, auditLog)
+	ctx := context.Background()
+
+	// Register -> auth.register
+	user, err := svc.Register(ctx, "audituser", "SecurePass123!")
+	require.NoError(t, err)
+
+	// Login success -> auth.login_success
+	token, err := svc.Login(ctx, "audituser", "SecurePass123!", "127.0.0.1")
+	require.NoError(t, err)
+
+	// Login failure (invalid credentials) -> auth.login_failure
+	_, err = svc.Login(ctx, "audituser", "WrongPass!", "127.0.0.1")
+	require.Error(t, err)
+
+	// Logout -> auth.logout
+	err = svc.Logout(ctx, token)
+	require.NoError(t, err)
+
+	// Verify actions logged
+	actions := make(map[string]bool)
+	for _, e := range auditLog.events {
+		actions[e.Action] = true
+		if e.Action == "auth.register" {
+			assert.NotNil(t, e.ActorID)
+			assert.Equal(t, user.ID, *e.ActorID)
+		}
+		if e.Action == "auth.login_success" {
+			assert.NotNil(t, e.ActorID)
+			assert.Equal(t, user.ID, *e.ActorID)
+		}
+		if e.Action == "auth.login_failure" {
+			assert.Nil(t, e.ActorID)
+		}
+		if e.Action == "auth.logout" {
+			assert.NotNil(t, e.ActorID)
+			assert.Equal(t, user.ID, *e.ActorID)
+		}
+	}
+
+	assert.True(t, actions["auth.register"], "expected auth.register audit event")
+	assert.True(t, actions["auth.login_success"], "expected auth.login_success audit event")
+	assert.True(t, actions["auth.login_failure"], "expected auth.login_failure audit event")
+	assert.True(t, actions["auth.logout"], "expected auth.logout audit event")
 }

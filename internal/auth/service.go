@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 )
 
@@ -43,6 +44,11 @@ func init() {
 	}
 }
 
+// AuditLogger defines the interface for recording audit events.
+type AuditLogger interface {
+	Log(ctx context.Context, e repository.AuditEvent) error
+}
+
 type throttleBucket struct {
 	mu          sync.Mutex
 	failures    int
@@ -63,6 +69,7 @@ func WithServiceClock(clock func() time.Time) ServiceOption {
 type Service struct {
 	userRepo     repository.UserRepo
 	sessionStore *SessionStore
+	auditLogger  AuditLogger
 	now          func() time.Time
 
 	throttleMu sync.Mutex
@@ -70,10 +77,11 @@ type Service struct {
 }
 
 // NewService instantiates an auth Service.
-func NewService(userRepo repository.UserRepo, sessionStore *SessionStore, opts ...ServiceOption) *Service {
+func NewService(userRepo repository.UserRepo, sessionStore *SessionStore, auditLogger AuditLogger, opts ...ServiceOption) *Service {
 	srv := &Service{
 		userRepo:     userRepo,
 		sessionStore: sessionStore,
+		auditLogger:  auditLogger,
 		now:          time.Now,
 		throttles:    make(map[string]*throttleBucket),
 	}
@@ -135,7 +143,15 @@ func (s *Service) Register(ctx context.Context, username, password string) (repo
 		return repository.User{}, fmt.Errorf("create user: %w", err)
 	}
 
-	// TODO: audit: emit user.registered event
+	if s.auditLogger != nil {
+		targetID := user.ID.String()
+		_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+			ActorID:  &user.ID,
+			Action:   "auth.register",
+			TargetID: &targetID,
+			Metadata: map[string]any{"username": user.Username},
+		})
+	}
 	return user, nil
 }
 
@@ -164,7 +180,13 @@ func (s *Service) Login(ctx context.Context, username, password, ip string) (str
 	// Reachable only if gcThrottles did not evict; gcThrottles preserves locked buckets. Do not relax that check without adjusting this branch.
 	if now.Before(bucket.lockedUntil) {
 		bucket.mu.Unlock()
-		// TODO: audit: emit auth.login_failed (throttled)
+		if s.auditLogger != nil {
+			_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+				ActorID:  nil,
+				Action:   "auth.login_failure",
+				Metadata: map[string]any{"reason": "throttled", "username": username, "ip": ip},
+			})
+		}
 		return "", ErrThrottled
 	}
 
@@ -175,7 +197,13 @@ func (s *Service) Login(ctx context.Context, username, password, ip string) (str
 	if bucket.failures > maxFailedAttempts {
 		bucket.lockedUntil = now.Add(lockoutDuration)
 		bucket.mu.Unlock()
-		// TODO: audit: emit auth.login_failed (throttled)
+		if s.auditLogger != nil {
+			_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+				ActorID:  nil,
+				Action:   "auth.login_failure",
+				Metadata: map[string]any{"reason": "throttled", "username": username, "ip": ip},
+			})
+		}
 		return "", ErrThrottled
 	}
 	bucket.mu.Unlock()
@@ -198,7 +226,13 @@ func (s *Service) Login(ctx context.Context, username, password, ip string) (str
 	}
 
 	if !valid {
-		// TODO: audit: emit auth.login_failed
+		if s.auditLogger != nil {
+			_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+				ActorID:  nil,
+				Action:   "auth.login_failure",
+				Metadata: map[string]any{"reason": "invalid_credentials", "username": username, "ip": ip},
+			})
+		}
 		return "", ErrInvalidCredentials
 	}
 
@@ -214,10 +248,37 @@ func (s *Service) Login(ctx context.Context, username, password, ip string) (str
 		return "", fmt.Errorf("create session: %w", err)
 	}
 
-	// TODO: audit: emit auth.login_succeeded
+	if s.auditLogger != nil {
+		targetID := user.ID.String()
+		_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+			ActorID:  &user.ID,
+			Action:   "auth.login_success",
+			TargetID: &targetID,
+			Metadata: map[string]any{"username": user.Username, "ip": ip},
+		})
+	}
 	return token, nil
 }
 
 func (s *Service) Logout(ctx context.Context, token string) error {
-	return s.sessionStore.Delete(ctx, token)
+	// Look up session first to retrieve userID for audit log before deletion
+	var userID *uuid.UUID
+	if sess, err := s.sessionStore.Lookup(ctx, token); err == nil && sess != nil {
+		userID = &sess.UserID
+	}
+
+	err := s.sessionStore.Delete(ctx, token)
+	if err == nil && s.auditLogger != nil {
+		var targetID *string
+		if userID != nil {
+			sID := userID.String()
+			targetID = &sID
+		}
+		_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+			ActorID:  userID,
+			Action:   "auth.logout",
+			TargetID: targetID,
+		})
+	}
+	return err
 }
