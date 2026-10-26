@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"                      // ← added
 	"log"
 	"net/http"
 	"os"
@@ -26,11 +27,17 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	_ = godotenv.Load()
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		return fmt.Errorf("config: %w", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -38,12 +45,12 @@ func main() {
 
 	pool, err := postgres.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("db: %v", err)
+		return fmt.Errorf("db: %w", err)
 	}
 	defer pool.Close()
 
 	if err := migrations.Migrate(ctx, pool); err != nil {
-		log.Fatalf("migrate: %v", err)
+		return fmt.Errorf("migrate: %w", err)
 	}
 
 	// KEK
@@ -51,18 +58,18 @@ func main() {
 	if err != nil {
 		kekBytes, err = base64.RawStdEncoding.DecodeString(cfg.KEKBase64)
 		if err != nil {
-			log.Fatalf("decode CYPHER_KEK: %v", err)
+			return fmt.Errorf("decode CYPHER_KEK: %w", err)
 		}
 	}
 	km, err := production.New(map[int][]byte{1: kekBytes})
 	if err != nil {
-		log.Fatalf("KeyManager: %v", err)
+		return fmt.Errorf("KeyManager: %w", err)
 	}
 
 	// Storage
 	fs, err := storage.NewFS(cfg.StorageRoot)
 	if err != nil {
-		log.Fatalf("storage: %v", err)
+		return fmt.Errorf("storage: %w", err)
 	}
 
 	// Repos
@@ -110,12 +117,15 @@ func main() {
 
 	select {
 	case err := <-errCh:
-    log.Printf("listen: %v", err)
+		return fmt.Errorf("listen: %w", err)   // server already stopped; no Shutdown needed
 	case <-ctx.Done():
-    log.Println("cyphersecurity: shutting down")
+		log.Println("cyphersecurity: shutting down")
 	}
-	
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	_ = srv.Shutdown(shutdownCtx)
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown: %w", err)
+	}
+	return nil
 }
