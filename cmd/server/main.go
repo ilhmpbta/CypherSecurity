@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt" // ← added
 	"log"
@@ -54,14 +53,7 @@ func run() error {
 	}
 
 	// KEK
-	kekBytes, err := base64.StdEncoding.DecodeString(cfg.KEKBase64)
-	if err != nil {
-		kekBytes, err = base64.RawStdEncoding.DecodeString(cfg.KEKBase64)
-		if err != nil {
-			return fmt.Errorf("decode CYPHER_KEK: %w", err)
-		}
-	}
-	km, err := production.New(map[int][]byte{1: kekBytes})
+	km, err := production.New(map[int][]byte{1: cfg.KEKBytes})
 	if err != nil {
 		return fmt.Errorf("KeyManager: %w", err)
 	}

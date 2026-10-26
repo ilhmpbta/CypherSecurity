@@ -13,7 +13,7 @@ type Config struct {
 	DatabaseURL        string
 	HTTPAddr           string
 	KEKBase64          string
-	SessionSecret      string
+	KEKBytes           []byte
 	MaxJSONBodyBytes   int64
 	MaxUploadBytes     int64
 	SecureCookies      bool
@@ -109,7 +109,7 @@ func Load() (*Config, error) {
 		DatabaseURL:        databaseURL,
 		HTTPAddr:           httpAddr,
 		KEKBase64:          kekBase64,
-		SessionSecret:      os.Getenv("SESSION_SECRET"),
+		KEKBytes:           kekBytes,
 		MaxJSONBodyBytes:   1 << 20, // 1 MB default
 		MaxUploadBytes:     maxUploadBytes,
 		SecureCookies:      secureCookies,

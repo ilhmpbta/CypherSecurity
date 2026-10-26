@@ -40,7 +40,8 @@ func NewRouter(deps Deps) http.Handler {
 	}
 
 	authHandler := handlers.NewAuthHandler(deps.AuthSvc, deps.UserRepo, secureCookies)
-	filesHandler := handlers.NewFilesHandler(deps.FileSvc, 4<<20) // 4MB RAM buffer for multipart parsing, independent of MaxUploadBytes
+	const multipartRAMBuffer = 4 << 20 // 4 MiB in-memory multipart buffer; upload cap is enforced by uploadBodyMW using Config.MaxUploadBytes.
+	filesHandler := handlers.NewFilesHandler(deps.FileSvc, multipartRAMBuffer)
 	recordsHandler := handlers.NewRecordsHandler(deps.RecordSvc)
 	auditHandler := handlers.NewAuditHandler(deps.AuditSvc)
 

@@ -17,9 +17,13 @@ type FilesHandler struct {
 	maxMemory int64
 }
 
+// NewFilesHandler creates a handler. maxMemory is passed to ParseMultipartForm
+// and controls how many bytes of the multipart body are buffered in RAM before
+// spilling to temp files; it does NOT cap the total upload size — that is
+// enforced upstream by middleware.MaxBodyBytes using Config.MaxUploadBytes.
 func NewFilesHandler(fileSvc FileService, maxMemory int64) *FilesHandler {
 	if maxMemory <= 0 {
-		maxMemory = 4 << 20 // 4MB default RAM buffer for multipart parsing
+		maxMemory = 4 << 20 // 4 MiB default; independent of MaxUploadBytes
 	}
 	return &FilesHandler{fileSvc: fileSvc, maxMemory: maxMemory}
 }

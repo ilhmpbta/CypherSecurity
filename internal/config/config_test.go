@@ -25,6 +25,9 @@ func TestLoadConfig(t *testing.T) {
 		if cfg.KEKBase64 != validKEK {
 			t.Errorf("expected KEK %s, got %s", validKEK, cfg.KEKBase64)
 		}
+		if len(cfg.KEKBytes) != 32 {
+			t.Errorf("expected KEKBytes length 32, got %d", len(cfg.KEKBytes))
+		}
 		if cfg.SessionIdleTimeout != 30*time.Minute {
 			t.Errorf("expected idle timeout 30m, got %v", cfg.SessionIdleTimeout)
 		}
