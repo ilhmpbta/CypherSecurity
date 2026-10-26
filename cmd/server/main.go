@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"                      // ← added
+	"fmt" // ← added
 	"log"
 	"net/http"
 	"os"
@@ -117,7 +117,7 @@ func run() error {
 
 	select {
 	case err := <-errCh:
-		return fmt.Errorf("listen: %w", err)   // server already stopped; no Shutdown needed
+		return fmt.Errorf("listen: %w", err) // server already stopped; no Shutdown needed
 	case <-ctx.Done():
 		log.Println("cyphersecurity: shutting down")
 	}

@@ -38,11 +38,11 @@ func (s *Service) Update(ctx context.Context, id, ownerID uuid.UUID, dataType st
 		payload = make(map[string]any)
 	}
 	existing, err := s.repo.GetByIDForOwner(ctx, id, ownerID)
-    if err != nil {
-        return repository.PersonalRecord{}, err
-    }
-    existing.DataType = dataType
-    existing.Payload = payload
+	if err != nil {
+		return repository.PersonalRecord{}, err
+	}
+	existing.DataType = dataType
+	existing.Payload = payload
 	return s.repo.UpdateForOwner(ctx, existing, ownerID)
 }
 

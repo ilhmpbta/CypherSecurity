@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 )
 
 type AuditRepo struct {
