@@ -1,4 +1,5 @@
 package files
 
-// Metadata describes a stored file.
-type Metadata struct{}
+import "github.com/ilhmpbta/CypherSecurity/internal/repository"
+
+type Metadata = repository.File
