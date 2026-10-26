@@ -6,24 +6,30 @@ import (
 	"os"
 )
 
-type Config struct{
-	DatabaseURL 	string
-	HTTPAddr 		string
-	KEKBase64		string
-	SessionSecret 	string
+type Config struct {
+	DatabaseURL      string
+	HTTPAddr         string
+	KEKBase64        string
+	SessionSecret    string
+	MaxJSONBodyBytes int64
+	MaxUploadBytes   int64
+	SecureCookies    bool
 }
 
 // Load reads configuration from the environment.
 func Load() (*Config, error) {
 	cfg := &Config{
-		DatabaseURL:	os.Getenv("DATABASE_URL"),
-		HTTPAddr:		os.Getenv("HTTP_ADDR"),
-		KEKBase64:		os.Getenv("CYPHER_KEK"),
-		SessionSecret: 	os.Getenv("SESSION_SECRET"),
+		DatabaseURL:      os.Getenv("DATABASE_URL"),
+		HTTPAddr:         os.Getenv("HTTP_ADDR"),
+		KEKBase64:        os.Getenv("CYPHER_KEK"),
+		SessionSecret:    os.Getenv("SESSION_SECRET"),
+		MaxJSONBodyBytes: 1 << 20,  // 1 MB default
+		MaxUploadBytes:   32 << 20, // 32 MB default
+		SecureCookies:    os.Getenv("CYPHER_SECURE_COOKIES") != "false",
 	}
 
 	if cfg.HTTPAddr == "" {
-    	cfg.HTTPAddr = ":8080"
+		cfg.HTTPAddr = ":8080"
 	}
 
 	if cfg.DatabaseURL == "" {
