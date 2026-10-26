@@ -37,13 +37,13 @@ func (s *Service) Update(ctx context.Context, id, ownerID uuid.UUID, dataType st
 	if payload == nil {
 		payload = make(map[string]any)
 	}
-	record := repository.PersonalRecord{
-		ID:       id,
-		OwnerID:  ownerID,
-		DataType: dataType,
-		Payload:  payload,
-	}
-	return s.repo.UpdateForOwner(ctx, record, ownerID)
+	existing, err := s.repo.GetByIDForOwner(ctx, id, ownerID)
+    if err != nil {
+        return repository.PersonalRecord{}, err
+    }
+    existing.DataType = dataType
+    existing.Payload = payload
+	return s.repo.UpdateForOwner(ctx, existing, ownerID)
 }
 
 func (s *Service) Delete(ctx context.Context, id, ownerID uuid.UUID) error {
