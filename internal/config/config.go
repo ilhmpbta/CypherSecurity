@@ -14,6 +14,7 @@ type Config struct {
 	MaxJSONBodyBytes int64
 	MaxUploadBytes   int64
 	SecureCookies    bool
+	StorageRoot      string
 }
 
 // Load reads configuration from the environment.
@@ -26,6 +27,11 @@ func Load() (*Config, error) {
 		MaxJSONBodyBytes: 1 << 20,  // 1 MB default
 		MaxUploadBytes:   32 << 20, // 32 MB default
 		SecureCookies:    os.Getenv("CYPHER_SECURE_COOKIES") != "false",
+		StorageRoot:      os.Getenv("CYPHER_STORAGE_ROOT"),
+	}
+
+	if cfg.StorageRoot == "" {
+		cfg.StorageRoot = "data/storage"
 	}
 
 	if cfg.HTTPAddr == "" {
