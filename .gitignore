@@ -35,3 +35,5 @@ testdata/*
 *.swp
 .DS_Store
 Thumbs.db
+web/node_modules/
+web/dist/
