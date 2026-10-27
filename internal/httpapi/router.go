@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+    "io/fs"
 
+    "github.com/ilhmpbta/CypherSecurity/web"
 	"github.com/ilhmpbta/CypherSecurity/internal/config"
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi/handlers"
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi/middleware"
@@ -102,6 +104,21 @@ func NewRouter(deps Deps) http.Handler {
 	csrfMW := middleware.CSRF(secureCookies)
 
 	mux.Handle("/api/", ratelimitMW(csrfMW(apiMux)))
+
+	sub, err := fs.Sub(web.Dist, "dist")
+	if err == nil {
+		static := http.FileServer(http.FS(sub))
+		
+		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	    if r.Method != http.MethodGet && r.Method != http.MethodHead {
+	        w.Header().Set("Allow", "GET, HEAD")
+	        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	        return
+	    }
+					
+	    static.ServeHTTP(w, r)
+		}))
+	}
 
 	return mux
 }

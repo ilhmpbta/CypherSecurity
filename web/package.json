@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && tsc && cp index.html dist/index.html && cp src/style.css dist/style.css",
-    "serve": "npx --yes serve dist"
+    "build": "npm run clean && tsc && cp index.html dist/index.html && cp src/style.css dist/style.css"
   },
   "devDependencies": {
     "typescript": "^5.4.0"
