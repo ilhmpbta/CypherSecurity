@@ -1,6 +1,5 @@
 import { apiFetch, ApiError } from "../api.js";
 import { friendlyMessage } from "../errors.js";
-import type { Session } from "./session.js";
 
 export function renderLogin(root: HTMLElement, onSuccess: () => void): void {
   root.innerHTML = `
@@ -35,7 +34,6 @@ export function renderLogin(root: HTMLElement, onSuccess: () => void): void {
         method: "POST",
         body: JSON.stringify({ username, password }),
       });
-      await apiFetch<Session>("/api/auth/me");
       onSuccess();
     } catch (e) {
       const code = (e as ApiError).code ?? "unknown";

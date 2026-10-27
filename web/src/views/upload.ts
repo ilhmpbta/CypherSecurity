@@ -137,7 +137,7 @@ export function mountUploader(
       reject("That file is empty.");
       return;
     }
-    if (file.type && !ACCEPTED_TYPES.includes(file.type)) {
+    if (file.type && !(ACCEPTED_TYPES as readonly string[]).includes(file.type)) {
       reject(`“${file.type}” is not a supported type.`);
       return;
     }
@@ -223,7 +223,7 @@ export function mountUploader(
       progressLabel.textContent = `${pct}% — ${formatBytes(ev.loaded)} of ${formatBytes(ev.total)}`;
     };
 
-    req.onload = () => {
+        req.onload = () => {
       xhr = null;
       if (req.status >= 200 && req.status < 300) {
         progressFill.style.width = "100%";
@@ -237,14 +237,13 @@ export function mountUploader(
         progressWrap.hidden = true;
         let msg = `Upload failed (HTTP ${req.status}).`;
         try {
-          const body = JSON.parse(req.responseText) as {
-            error?: string | { code?: string };
-          };
+          const body = JSON.parse(req.responseText);
           if (typeof body.error === "string") msg = body.error;
-          else if (body.error && typeof body.error === "object" && body.error.code) {
-            msg = body.error.code;
-          }
-        } catch { /* keep default */ }
+          else if (body.error) msg = JSON.stringify(body.error);
+          else msg = req.responseText || msg;
+        } catch {
+          msg = req.responseText || msg;
+        }
         showError(msg);
         reset();
       }

@@ -30,7 +30,10 @@ export function renderFileList(
   root.innerHTML = `
     <header>
       <span>Signed in as <strong id="current-user"></strong></span>
-      <button id="logout" type="button">Sign out</button>
+      <div style="display: flex; gap: 0.5rem;">
+        <button id="nav-records" type="button">Personal Records</button>
+        <button id="logout" type="button">Sign out</button>
+      </div>
     </header>
     <h2>Your files</h2>
     <div id="upload-slot"></div>
@@ -43,6 +46,13 @@ export function renderFileList(
 
   const logoutBtn = root.querySelector<HTMLButtonElement>("#logout");
   if (logoutBtn) logoutBtn.addEventListener("click", onLogout);
+
+  const recordsBtn = root.querySelector<HTMLButtonElement>("#nav-records");
+  if (recordsBtn) {
+    recordsBtn.addEventListener("click", () => {
+      location.hash = "#records";
+    });
+  }
 
   const listEl = root.querySelector<HTMLUListElement>("#files-list")!;
   const emptyEl = root.querySelector<HTMLParagraphElement>("#files-empty")!;
@@ -87,7 +97,9 @@ export function renderFileList(
           <button class="file-delete" type="button">Delete</button>
         </div>`;
 
+      
       li.querySelector<HTMLElement>(".file-name")!.textContent = f.original_name;
+      
       li.querySelector<HTMLElement>(".file-detail")!.textContent =
         `${formatBytes(f.plaintext_size)} · ${f.content_type} · ${new Date(f.created_at).toLocaleString()}`;
 
@@ -99,7 +111,9 @@ export function renderFileList(
 
       const del = li.querySelector<HTMLButtonElement>(".file-delete")!;
       del.addEventListener("click", async () => {
-        if (!confirm(`Delete “${f.original_name}”?`)) return;
+        if (!window.confirm(`Are you sure you want to delete "${f.original_name}"?`)) {
+          return;
+        }
         del.disabled = true;
         try {
           const csrf = readCookie("csrf_token");
@@ -109,7 +123,7 @@ export function renderFileList(
             headers: csrf ? { "X-CSRF-Token": csrf } : {},
           });
           if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
-          await load();
+          await load(); 
         } catch (e) {
           errEl.textContent = `Delete failed: ${(e as Error).message}`;
           errEl.hidden = false;

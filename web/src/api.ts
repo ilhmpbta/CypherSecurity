@@ -62,9 +62,12 @@ export async function apiFetch<T>(
   if (!res.ok) {
     let code = "unknown";
     try {
-      const body = (await res.json()) as { error?: { code?: string } | string };
-      if (typeof body.error === "string") code = body.error;
-      else if (body.error?.code) code = body.error.code;
+      const body = (await res.json()) as { error?: string | { code?: string } };
+      if (typeof body.error === "string") {
+        code = body.error;
+      } else if (body.error && typeof body.error === "object" && body.error.code) {
+        code = body.error.code;
+      }
     } catch {
       /* non-JSON body */
     }
