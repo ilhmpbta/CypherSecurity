@@ -1,4 +1,5 @@
 const CSRF_HEADER = "X-CSRF-Token";
+const CSRF_COOKIE = "csrf_token";
 
 let csrfToken: string | null = null;
 
@@ -7,12 +8,33 @@ export interface ApiError {
   status: number;
 }
 
+function readCookie(name: string): string | null {
+  const prefix = name + "=";
+  for (const part of document.cookie.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(prefix)) return decodeURIComponent(trimmed.slice(prefix.length));
+  }
+  return null;
+}
+
 async function ensureCsrf(): Promise<string> {
   if (csrfToken) return csrfToken;
-  const res = await fetch("/api/auth/csrf", { credentials: "same-origin" });
-  if (!res.ok) throw { code: "csrf_unavailable", status: res.status } satisfies ApiError;
-  const body = (await res.json()) as { csrfToken: string };
-  csrfToken = body.csrfToken;
+
+  const fromCookie = readCookie(CSRF_COOKIE);
+  if (fromCookie) {
+    csrfToken = fromCookie;
+    return csrfToken;
+  }
+
+  try {
+    await fetch("/api/auth/me", { credentials: "same-origin" });
+  } catch {
+    throw { code: "csrf_unavailable", status: 0 } satisfies ApiError;
+  }
+
+  const retry = readCookie(CSRF_COOKIE);
+  if (!retry) throw { code: "csrf_unavailable", status: 0 } satisfies ApiError;
+  csrfToken = retry;
   return csrfToken;
 }
 
@@ -40,8 +62,9 @@ export async function apiFetch<T>(
   if (!res.ok) {
     let code = "unknown";
     try {
-      const body = (await res.json()) as { error?: { code?: string } };
-      if (body.error?.code) code = body.error.code;
+      const body = (await res.json()) as { error?: { code?: string } | string };
+      if (typeof body.error === "string") code = body.error;
+      else if (body.error?.code) code = body.error.code;
     } catch {
       /* non-JSON body */
     }

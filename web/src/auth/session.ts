@@ -6,7 +6,7 @@ export interface Session {
 }
 
 export function currentSession(): Promise<Session> {
-  return apiFetch<Session>("/api/me");
+  return apiFetch<Session>("/api/auth/me");
 }
 
 export async function logout(): Promise<void> {

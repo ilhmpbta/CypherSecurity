@@ -31,11 +31,11 @@ export function renderLogin(root: HTMLElement, onSuccess: () => void): void {
     }
 
     try {
-      await apiFetch<Session>("/api/auth/login", {
+      await apiFetch<unknown>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ username, password }),
       });
-      await apiFetch<Session>("/api/me");
+      await apiFetch<Session>("/api/auth/me");
       onSuccess();
     } catch (e) {
       const code = (e as ApiError).code ?? "unknown";
@@ -43,12 +43,12 @@ export function renderLogin(root: HTMLElement, onSuccess: () => void): void {
       errEl.hidden = false;
     }
   });
-  
+
   const registerLink = root.querySelector<HTMLAnchorElement>('a[href="#register"]');
   if (registerLink) {
     registerLink.addEventListener("click", (e) => {
-      e.preventDefault(); 
-      location.hash = "#register"; 
+      e.preventDefault();
+      location.hash = "#register";
     });
   }
 }
