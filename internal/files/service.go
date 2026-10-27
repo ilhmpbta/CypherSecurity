@@ -132,7 +132,7 @@ func (s *Service) Upload(ctx context.Context, ownerID uuid.UUID, r io.Reader, co
 		CiphertextSize: cw.n,
 		AlgID:          "aes-256-gcm-stream-v1",
 		WrappedDEK:     wrappedDEK,
-		NoncePrefix:    nil, // Vestigial per new AEAD streaming contract (nonce is in the stream blob)
+		NoncePrefix:    []byte{}, // Vestigial per new AEAD streaming contract (nonce is in the stream blob)
 		CreatedAt:      s.now(),
 	}
 

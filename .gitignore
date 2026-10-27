@@ -35,5 +35,7 @@ testdata/*
 *.swp
 .DS_Store
 Thumbs.db
+web/dist/*
+!web/dist/.gitkeep
 web/node_modules/
-web/dist/
+web/devserver.mjs

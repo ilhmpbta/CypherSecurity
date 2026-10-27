@@ -3,6 +3,7 @@ import { renderRegister } from "./auth/register.js";
 import { currentSession, logout } from "./auth/session.js";
 import type { Session } from "./auth/session.js";
 import { renderFileList } from "./views/fileList.js";
+import { renderRecordsList } from "./views/records.js";
 
 const root = document.getElementById("app");
 if (!root) {
@@ -34,9 +35,15 @@ export async function boot(): Promise<void> {
     return;
   }
 
-  renderFileList(root!, session, () => {
-    void logout();
-  });
+  if (location.hash === "#records") {
+    renderRecordsList(root!, () => {
+      location.hash = "";
+    });
+  }else {
+    renderFileList(root!, session, () => {
+      void logout();
+    });
+  }
 }
 
 window.addEventListener("hashchange", () => {

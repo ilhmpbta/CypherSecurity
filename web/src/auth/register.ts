@@ -46,7 +46,7 @@ export function renderRegister(root: HTMLElement, onSuccess: () => void): void {
         method: "POST",
         body: JSON.stringify({ username, password }),
       });
-      await apiFetch<RegisteredUser>("/api/auth/login", {
+      await apiFetch<unknown>("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({ username, password }),
       });
@@ -62,7 +62,7 @@ export function renderRegister(root: HTMLElement, onSuccess: () => void): void {
   if (loginLink) {
     loginLink.addEventListener("click", (e) => {
       e.preventDefault();
-      location.hash = ""; 
+      location.hash = "";
     });
   }
 }
