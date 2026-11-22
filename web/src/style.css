@@ -143,3 +143,56 @@ header {
 .file-detail { font-size: 0.85em; opacity: 0.75; }
 
 .file-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
+.share-controls,
+.share-actions,
+.reauth-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.share-controls { justify-content: space-between; margin-bottom: 1rem; }
+.share-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.share-tabs button.active { background: highlight; color: highlighttext; }
+
+.shares-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.share-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-radius: 0.375rem;
+}
+
+.share-detail,
+.row-error,
+.revoked-banner { font-size: 0.85em; }
+.revoked-banner { color: #c0392b; font-weight: bold; }
+
+.reauth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 55%);
+}
+
+.reauth-modal {
+  width: min(24rem, calc(100vw - 3rem));
+  padding: 1.25rem;
+  border-radius: 0.5rem;
+  background: Canvas;
+  color: CanvasText;
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 35%);
+}

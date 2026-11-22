@@ -1,5 +1,10 @@
 import type { Session } from "../auth/session.js";
 import { mountUploader, formatBytes } from "./upload.js";
+import { apiFetch, apiFetchBlob, ApiError, isSessionExpired } from "../api.js";
+import { friendlyMessage } from "../errors.js";
+import { requestShare } from "../shares/api.js";
+import { downloadBlob } from "../shares/download.js";
+import { withReauth } from "../shares/reauth.js";
 
 interface FileRow {
   id: string;
@@ -7,19 +12,14 @@ interface FileRow {
   content_type: string;
   plaintext_size: number;
   created_at: string;
+  access: "owner" | "shared";
+  my_pending_request_id: string | null;
+  pending_requests_count: number;
+  share_state?: "none" | "pending" | "approved" | "imported" | "revoked";
 }
 
 interface ListResponse {
   files: FileRow[];
-}
-
-function readCookie(name: string): string | null {
-  const prefix = name + "=";
-  for (const part of document.cookie.split(";")) {
-    const trimmed = part.trim();
-    if (trimmed.startsWith(prefix)) return decodeURIComponent(trimmed.slice(prefix.length));
-  }
-  return null;
 }
 
 export function renderFileList(
@@ -32,6 +32,7 @@ export function renderFileList(
       <span>Signed in as <strong id="current-user"></strong></span>
       <div style="display: flex; gap: 0.5rem;">
         <button id="nav-records" type="button">Personal Records</button>
+        <button id="nav-shares" type="button">Shares</button>
         <button id="logout" type="button">Sign out</button>
       </div>
     </header>
@@ -54,6 +55,11 @@ export function renderFileList(
     });
   }
 
+  const sharesBtn = root.querySelector<HTMLButtonElement>("#nav-shares");
+  sharesBtn?.addEventListener("click", () => {
+    location.hash = "#shares";
+  });
+
   const listEl = root.querySelector<HTMLUListElement>("#files-list")!;
   const emptyEl = root.querySelector<HTMLParagraphElement>("#files-empty")!;
   const errEl = root.querySelector<HTMLParagraphElement>("#files-error")!;
@@ -62,16 +68,15 @@ export function renderFileList(
   const load = async (): Promise<void> => {
     errEl.hidden = true;
     try {
-      const res = await fetch("/api/files", { credentials: "same-origin" });
-      if (res.status === 401) {
+      const body = await apiFetch<ListResponse>("/api/files");
+      renderRows(body.files);
+    } catch (e) {
+      if (isSessionExpired(e)) {
         location.reload();
         return;
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as ListResponse;
-      renderRows(body.files);
-    } catch (e) {
-      errEl.textContent = `Could not load files: ${(e as Error).message}`;
+      const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
+      errEl.textContent = `Could not load files: ${friendlyMessage(code)}`;
       errEl.hidden = false;
     }
   };
@@ -93,8 +98,7 @@ export function renderFileList(
           <span class="file-detail"></span>
         </div>
         <div class="file-actions">
-          <a class="file-download" href="#">Download</a>
-          <button class="file-delete" type="button">Delete</button>
+          <span class="file-inline-error" role="alert" hidden></span>
         </div>`;
 
       
@@ -103,33 +107,104 @@ export function renderFileList(
       li.querySelector<HTMLElement>(".file-detail")!.textContent =
         `${formatBytes(f.plaintext_size)} · ${f.content_type} · ${new Date(f.created_at).toLocaleString()}`;
 
-      const download = li.querySelector<HTMLAnchorElement>(".file-download")!;
-      download.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        window.location.href = `/api/files/${encodeURIComponent(f.id)}/download`;
-      });
+      const actions = li.querySelector<HTMLElement>(".file-actions")!;
+      const inlineError = li.querySelector<HTMLSpanElement>(".file-inline-error")!;
 
-      const del = li.querySelector<HTMLButtonElement>(".file-delete")!;
-      del.addEventListener("click", async () => {
-        if (!window.confirm(`Are you sure you want to delete "${f.original_name}"?`)) {
-          return;
-        }
-        del.disabled = true;
-        try {
-          const csrf = readCookie("csrf_token");
-          const res = await fetch(`/api/files/${encodeURIComponent(f.id)}`, {
-            method: "DELETE",
-            credentials: "same-origin",
-            headers: csrf ? { "X-CSRF-Token": csrf } : {},
+      if (f.access === "shared") {
+        const shareState = f.share_state ??
+          (f.my_pending_request_id ? "pending" : "none");
+        if (shareState === "pending" || f.my_pending_request_id) {
+          const waiting = document.createElement("span");
+          waiting.textContent = "Request pending";
+          actions.appendChild(waiting);
+        } else if (shareState === "approved" || shareState === "imported") {
+          const download = document.createElement("button");
+          download.type = "button";
+          download.textContent = "Download";
+          download.addEventListener("click", async () => {
+            download.disabled = true;
+            try {
+              const result = await withReauth(
+                () => apiFetchBlob(`/api/files/${encodeURIComponent(f.id)}/download`),
+                session.username,
+              );
+              downloadBlob(result.blob, result.filename);
+            } catch (e) {
+              const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
+              inlineError.textContent = friendlyMessage(code);
+              inlineError.hidden = false;
+            } finally {
+              download.disabled = false;
+            }
           });
-          if (!res.ok && res.status !== 404) throw new Error(`HTTP ${res.status}`);
-          await load(); 
-        } catch (e) {
-          errEl.textContent = `Delete failed: ${(e as Error).message}`;
-          errEl.hidden = false;
-          del.disabled = false;
+          actions.appendChild(download);
+        } else if (shareState === "revoked") {
+          const revoked = document.createElement("span");
+          revoked.textContent = "Revoked by owner";
+          actions.appendChild(revoked);
+        } else {
+          const request = document.createElement("button");
+          request.type = "button";
+          request.textContent = "Request Access";
+          request.addEventListener("click", async () => {
+            const note = window.prompt("Add a note (optional)") ?? "";
+            request.disabled = true;
+            try {
+              await requestShare(f.id, note);
+              await load();
+            } catch (e) {
+              const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
+              inlineError.textContent = friendlyMessage(code);
+              inlineError.hidden = false;
+              request.disabled = false;
+            }
+          });
+          actions.appendChild(request);
         }
-      });
+      } else {
+        if (f.pending_requests_count > 0) {
+          const badge = document.createElement("button");
+          badge.type = "button";
+          badge.textContent = `${f.pending_requests_count} pending`;
+          badge.addEventListener("click", () => {
+            location.hash = "#shares/inbox";
+          });
+          actions.appendChild(badge);
+        }
+        const download = document.createElement("button");
+        download.type = "button";
+        download.textContent = "Download";
+        download.addEventListener("click", async () => {
+          download.disabled = true;
+          try {
+            const result = await apiFetchBlob(`/api/files/${encodeURIComponent(f.id)}/download`);
+            downloadBlob(result.blob, result.filename);
+          } catch (e) {
+            const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
+            inlineError.textContent = friendlyMessage(code);
+            inlineError.hidden = false;
+          } finally {
+            download.disabled = false;
+          }
+        });
+        const del = document.createElement("button");
+        del.type = "button";
+        del.textContent = "Delete";
+        del.addEventListener("click", async () => {
+          if (!window.confirm(`Are you sure you want to delete "${f.original_name}"?`)) return;
+          del.disabled = true;
+          try {
+            await apiFetch<void>(`/api/files/${encodeURIComponent(f.id)}`, { method: "DELETE" });
+            await load();
+          } catch (e) {
+            const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
+            inlineError.textContent = friendlyMessage(code);
+            inlineError.hidden = false;
+            del.disabled = false;
+          }
+        });
+        actions.append(download, del);
+      }
 
       listEl.appendChild(li);
     }

@@ -209,7 +209,7 @@ export function mountUploader(
     const file = selectedFile;
     const req = new XMLHttpRequest();
     xhr = req;
-    req.open("POST", "/api/files", true);
+    req.open("POST", `${API_BASE}/api/files`, true);
     req.withCredentials = true;
 
     const csrf = readCookie("csrf_token");
@@ -276,3 +276,4 @@ export function mountUploader(
     dropzone.removeEventListener("drop", onDrop);
   };
 }
+import { API_BASE } from "../config.js";

@@ -4,6 +4,7 @@ import { currentSession, logout } from "./auth/session.js";
 import type { Session } from "./auth/session.js";
 import { renderFileList } from "./views/fileList.js";
 import { renderRecordsList } from "./views/records.js";
+import { renderSharesPage } from "./shares/sharesPage.js";
 
 const root = document.getElementById("app");
 if (!root) {
@@ -37,6 +38,10 @@ export async function boot(): Promise<void> {
 
   if (location.hash === "#records") {
     renderRecordsList(root!, () => {
+      location.hash = "";
+    });
+  } else if (location.hash === "#shares" || location.hash.startsWith("#shares/")) {
+    renderSharesPage(root!, session.username, () => {
       location.hash = "";
     });
   }else {
