@@ -16,6 +16,8 @@ const MESSAGES: Record<string, string> = {
   // files (handlers/files.go)
   "invalid multipart request": "Invalid file upload",
   "missing file field": "No file was attached",
+  "unsupported or mismatched file type": "That file type isn't accepted or the file contents don't match its extension",
+  "file exceeds size limit": "That file is larger than the server allows",
   "upload failed": "Upload failed — please try again",
   "list failed": "Could not load your files",
   "download failed": "Download failed",

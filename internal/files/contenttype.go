@@ -30,6 +30,18 @@ var officeTypes = map[string]bool{
 	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":       true,
 }
 
+var detectedAllows = map[string]map[string]bool{
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+		"application/zip": true,
+	},
+	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+		"application/zip": true,
+	},
+	"image/heic": {
+		"application/octet-stream": true,
+	},
+}
+
 // ValidateContentType returns nil if contentType is allowed for this app and
 // matches the first 512 bytes of r (which must be peeked without consuming r).
 func ValidateContentType(declared string, first512 []byte) error {
@@ -52,15 +64,19 @@ func ValidateContentType(declared string, first512 []byte) error {
 		detected = strings.TrimSpace(detected[:idx])
 	}
 
+	if detected == declared {
+		return nil
+	}
+
+	if detectedAllows[declared] != nil && detectedAllows[declared][detected] {
+		return nil
+	}
+
 	if detected == "application/octet-stream" {
 		if officeTypes[declared] {
 			return nil
 		}
 		return ErrInvalidContentType
-	}
-
-	if detected == declared {
-		return nil
 	}
 
 	decSlash := strings.Index(declared, "/")

@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ilhmpbta/CypherSecurity/internal/config"
+	"github.com/ilhmpbta/CypherSecurity/internal/files"
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 	"github.com/stretchr/testify/assert"
@@ -306,6 +307,110 @@ func TestFilesUploadSuccess(t *testing.T) {
 	router.ServeHTTP(rec, reqPost)
 
 	assert.Equal(t, http.StatusCreated, rec.Code)
+}
+
+func TestFilesUploadRejectsMismatchedContentType(t *testing.T) {
+	userID := uuid.New()
+	svc := &fakeFileService{
+		uploadFn: func(ctx context.Context, ownerID uuid.UUID, r io.Reader, ct, name string) (repository.File, error) {
+			return repository.File{}, files.ErrInvalidContentType
+		},
+	}
+
+	router := httpapi.NewRouter(httpapi.Deps{
+		AuthSvc: &fakeAuthService{},
+		FileSvc: svc,
+		UserRepo: &fakeUserRepoForFiles{
+			user: repository.User{ID: userID, Username: "test"},
+		},
+		SessionStore: &fakeSessionStoreForFiles{
+			sess: &repository.Session{ID: uuid.New(), UserID: userID, ExpiresAt: time.Now().Add(time.Hour)},
+		},
+		Config: &config.Config{},
+	})
+
+	reqMe, _ := http.NewRequest("GET", "/api/auth/me", nil)
+	recMe := httptest.NewRecorder()
+	router.ServeHTTP(recMe, reqMe)
+
+	var csrfCookie *http.Cookie
+	for _, c := range recMe.Result().Cookies() {
+		if c.Name == "csrf_token" {
+			csrfCookie = c
+		}
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "test.xlsx")
+	_, _ = part.Write([]byte("fake"))
+	_ = writer.Close()
+
+	reqPost, _ := http.NewRequest("POST", "/api/files", body)
+	reqPost.Header.Set("Content-Type", writer.FormDataContentType())
+	reqPost.AddCookie(&http.Cookie{Name: "session_id", Value: "token"})
+	if csrfCookie != nil {
+		reqPost.AddCookie(csrfCookie)
+		reqPost.Header.Set("X-CSRF-Token", csrfCookie.Value)
+	}
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, reqPost)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "unsupported or mismatched file type")
+}
+
+func TestFilesUploadReturns500OnUnknownError(t *testing.T) {
+	userID := uuid.New()
+	svc := &fakeFileService{
+		uploadFn: func(ctx context.Context, ownerID uuid.UUID, r io.Reader, ct, name string) (repository.File, error) {
+			return repository.File{}, errors.New("boom")
+		},
+	}
+
+	router := httpapi.NewRouter(httpapi.Deps{
+		AuthSvc: &fakeAuthService{},
+		FileSvc: svc,
+		UserRepo: &fakeUserRepoForFiles{
+			user: repository.User{ID: userID, Username: "test"},
+		},
+		SessionStore: &fakeSessionStoreForFiles{
+			sess: &repository.Session{ID: uuid.New(), UserID: userID, ExpiresAt: time.Now().Add(time.Hour)},
+		},
+		Config: &config.Config{},
+	})
+
+	reqMe, _ := http.NewRequest("GET", "/api/auth/me", nil)
+	recMe := httptest.NewRecorder()
+	router.ServeHTTP(recMe, reqMe)
+
+	var csrfCookie *http.Cookie
+	for _, c := range recMe.Result().Cookies() {
+		if c.Name == "csrf_token" {
+			csrfCookie = c
+		}
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "test.xlsx")
+	_, _ = part.Write([]byte("fake"))
+	_ = writer.Close()
+
+	reqPost, _ := http.NewRequest("POST", "/api/files", body)
+	reqPost.Header.Set("Content-Type", writer.FormDataContentType())
+	reqPost.AddCookie(&http.Cookie{Name: "session_id", Value: "token"})
+	if csrfCookie != nil {
+		reqPost.AddCookie(csrfCookie)
+		reqPost.Header.Set("X-CSRF-Token", csrfCookie.Value)
+	}
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, reqPost)
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Contains(t, rec.Body.String(), "upload failed")
 }
 
 func TestHealthzReturns200WhenCheckSucceeds(t *testing.T) {

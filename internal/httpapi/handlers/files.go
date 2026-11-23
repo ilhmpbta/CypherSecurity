@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/ilhmpbta/CypherSecurity/internal/files"
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi/middleware"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 )
@@ -59,7 +60,14 @@ func (h *FilesHandler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	savedFile, err := h.fileSvc.Upload(r.Context(), user.ID, file, contentType, header.Filename)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "upload failed")
+		switch {
+		case errors.Is(err, files.ErrInvalidContentType):
+			respondError(w, http.StatusBadRequest, "unsupported or mismatched file type")
+		case isMaxBytesError(err):
+			respondError(w, http.StatusRequestEntityTooLarge, "file exceeds size limit")
+		default:
+			respondError(w, http.StatusInternalServerError, "upload failed")
+		}
 		return
 	}
 
@@ -70,6 +78,11 @@ func (h *FilesHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		"plaintext_size": savedFile.PlaintextSize,
 		"created_at":     savedFile.CreatedAt,
 	})
+}
+
+func isMaxBytesError(err error) bool {
+	var maxBytesErr *http.MaxBytesError
+	return errors.As(err, &maxBytesErr)
 }
 
 func (h *FilesHandler) List(w http.ResponseWriter, r *http.Request) {
