@@ -2,7 +2,10 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -10,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ilhmpbta/CypherSecurity/internal/keys"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 )
 
@@ -68,12 +72,20 @@ func WithServiceClock(clock func() time.Time) ServiceOption {
 
 type Service struct {
 	userRepo     repository.UserRepo
+	keypairRepo  repository.UserKeypairRepo
 	sessionStore *SessionStore
 	auditLogger  AuditLogger
 	now          func() time.Time
 
 	throttleMu sync.Mutex
 	throttles  map[string]*throttleBucket
+}
+
+// WithKeypairRepo sets the user keypair repository for Service.
+func WithKeypairRepo(repo repository.UserKeypairRepo) ServiceOption {
+	return func(s *Service) {
+		s.keypairRepo = repo
+	}
 }
 
 // NewService instantiates an auth Service.
@@ -141,6 +153,34 @@ func (s *Service) Register(ctx context.Context, username, password string) (repo
 	}
 	if err != nil {
 		return repository.User{}, fmt.Errorf("create user: %w", err)
+	}
+
+	if s.keypairRepo != nil {
+		kdfSalt := make([]byte, 16)
+		if _, saltErr := rand.Read(kdfSalt); saltErr == nil {
+			wrapKey := keys.DeriveWrapKey(password, kdfSalt)
+			if _, privDER, certDER, fingerprint, notAfter, genErr := keys.GenerateKeypairAndCert(username); genErr == nil {
+				if encryptedPriv, nonce, encErr := keys.EncryptPrivateKey(wrapKey, privDER); encErr == nil {
+					if privAny, parseErr := x509.ParsePKCS8PrivateKey(privDER); parseErr == nil {
+						if privRSA, ok := privAny.(*rsa.PrivateKey); ok {
+							if pubDER, pubErr := x509.MarshalPKIXPublicKey(&privRSA.PublicKey); pubErr == nil {
+								_, _ = s.keypairRepo.Create(ctx, repository.UserKeypair{
+									UserID:              user.ID,
+									Algorithm:           "RSA-3072",
+									PublicKey:           pubDER,
+									PrivateKeyEncrypted: encryptedPriv,
+									PrivateKeyNonce:     nonce,
+									Fingerprint:         fingerprint,
+									Certificate:         certDER,
+									CertExpiresAt:       notAfter,
+									KDFSalt:             kdfSalt,
+								})
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	if s.auditLogger != nil {
@@ -243,7 +283,16 @@ func (s *Service) Login(ctx context.Context, username, password, ip string) (str
 	bucket.lockedUntil = time.Time{}
 	bucket.mu.Unlock()
 
-	token, err := s.sessionStore.Create(ctx, user.ID)
+	salt := make([]byte, 16)
+	_, _ = rand.Read(salt)
+	if s.keypairRepo != nil {
+		if kp, kpErr := s.keypairRepo.GetByUserID(ctx, user.ID); kpErr == nil && len(kp.KDFSalt) > 0 {
+			salt = kp.KDFSalt
+		}
+	}
+	wrapKey := keys.DeriveWrapKey(password, salt)
+
+	token, err := s.sessionStore.CreateWithWrapKey(ctx, user.ID, wrapKey)
 	if err != nil {
 		return "", fmt.Errorf("create session: %w", err)
 	}
