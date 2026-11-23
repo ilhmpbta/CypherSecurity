@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/ilhmpbta/CypherSecurity/internal/keys"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 )
 
@@ -13,6 +14,7 @@ type contextKey int
 const (
 	sessionKey contextKey = iota
 	userKey
+	keysSessionKey
 )
 
 type SessionStore interface {
@@ -51,8 +53,19 @@ func Session(sessionStore SessionStore, userRepo UserRepo) func(http.Handler) ht
 				return
 			}
 
+			var wrapKey []byte
+			if gwk, ok := sessionStore.(interface{ GetWrapKey(uuid.UUID) []byte }); ok {
+				wrapKey = gwk.GetWrapKey(sess.ID)
+			}
+
+			keysSess := keys.Session{
+				UserID:  sess.UserID,
+				WrapKey: wrapKey,
+			}
+
 			ctx := context.WithValue(r.Context(), sessionKey, sess)
 			ctx = context.WithValue(ctx, userKey, user)
+			ctx = context.WithValue(ctx, keysSessionKey, keysSess)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -72,4 +85,10 @@ func UserFromContext(ctx context.Context) (*repository.User, bool) {
 func SessionFromContext(ctx context.Context) (*repository.Session, bool) {
 	s, ok := ctx.Value(sessionKey).(*repository.Session)
 	return s, ok
+}
+
+// KeysSessionFromContext extracts the keys session from the context.
+func KeysSessionFromContext(ctx context.Context) (keys.Session, bool) {
+	ks, ok := ctx.Value(keysSessionKey).(keys.Session)
+	return ks, ok
 }
