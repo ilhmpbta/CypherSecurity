@@ -40,6 +40,9 @@ var detectedAllows = map[string]map[string]bool{
 	"image/heic": {
 		"application/octet-stream": true,
 	},
+	"video/quicktime": {
+		"application/octet-stream": true,
+	},
 }
 
 // ValidateContentType returns nil if contentType is allowed for this app and

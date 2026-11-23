@@ -30,6 +30,7 @@ func TestValidateContentType(t *testing.T) {
 		{"Valid XLSX with zip prefix", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", zipBytes, false},
 		{"DOCX with PDF prefix", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", pdfBytes, true},
 		{"HEIC with octet-stream prefix", "image/heic", octetBytes, false},
+		{"MOV with octet-stream prefix", "video/quicktime", octetBytes, false},
 	}
 
 	for _, tt := range tests {
