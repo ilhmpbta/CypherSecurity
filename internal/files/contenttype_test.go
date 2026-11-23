@@ -9,6 +9,8 @@ func TestValidateContentType(t *testing.T) {
 	jpegBytes := []byte("\xff\xd8\xff\xe0 some jpeg content...")
 	htmlBytes := []byte("<html><body>hello</body></html>")
 	officeBytes := []byte("\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1 some ole2 doc")
+	zipBytes := []byte("PK\x03\x04 some zip / docx / xlsx content")
+	octetBytes := []byte{0x00, 0x01, 0x02, 0x03}
 
 	tests := []struct {
 		name     string
@@ -24,6 +26,11 @@ func TestValidateContentType(t *testing.T) {
 		{"Office doc octet-stream allowed", "application/msword", officeBytes, false},
 		{"Office doc octet-stream wrong declared", "image/jpeg", officeBytes, true},
 		{"Empty file allowed", "application/pdf", nil, false},
+		{"Valid DOCX with zip prefix", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zipBytes, false},
+		{"Valid XLSX with zip prefix", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", zipBytes, false},
+		{"DOCX with PDF prefix", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", pdfBytes, true},
+		{"HEIC with octet-stream prefix", "image/heic", octetBytes, false},
+		{"MOV with octet-stream prefix", "video/quicktime", octetBytes, false},
 	}
 
 	for _, tt := range tests {
