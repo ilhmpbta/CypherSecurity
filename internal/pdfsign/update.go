@@ -25,7 +25,7 @@ var (
 	reRoot   = regexp.MustCompile(`/Root\s+(\d+)\s+(\d+)\s+R`)
 	rePrev   = regexp.MustCompile(`/Prev\s+(\d+)`)
 	rePages  = regexp.MustCompile(`/Pages\s+(\d+)\s+(\d+)\s+R`)
-	reObj    = regexp.MustCompile(`(?m)^(\d+)\s+\d+\s+obj`)
+	reObj    = regexp.MustCompile(`(?m)(?:^|[\r\n])\s*(\d+)\s+\d+\s+obj`)
 	reFields = regexp.MustCompile(`/Fields\s*\[([^\]]*)\]`)
 )
 
