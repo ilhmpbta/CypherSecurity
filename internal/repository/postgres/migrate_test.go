@@ -45,7 +45,7 @@ func TestMigrate_CreatesTablesAndIsIdempotent(t *testing.T) {
 
 	for _, table := range []string{
 		"users", "personal_records", "stored_files",
-		"audit_events", "sessions", "schema_migrations",
+		"audit_events", "sessions", "user_keypairs", "schema_migrations",
 	} {
 		var exists bool
 		err := pool.QueryRow(ctx,
@@ -62,5 +62,5 @@ func TestMigrate_CreatesTablesAndIsIdempotent(t *testing.T) {
 
 	var n int
 	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n))
-	require.Equal(t, 2, n, "expected exactly 2 applied migrations")
+	require.Equal(t, 3, n, "expected exactly 3 applied migrations")
 }

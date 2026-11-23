@@ -59,6 +59,19 @@ type Session struct {
 	CreatedAt time.Time
 }
 
+type UserKeypair struct {
+	UserID              uuid.UUID
+	Algorithm           string
+	PublicKey           []byte
+	PrivateKeyEncrypted []byte
+	PrivateKeyNonce     []byte
+	Fingerprint         string
+	Certificate         []byte
+	CertExpiresAt       time.Time
+	KDFSalt             []byte
+	CreatedAt           time.Time
+}
+
 type UserRepo interface {
 	Create(ctx context.Context, username, passwordHash string) (User, error)
 	GetByUsername(ctx context.Context, username string) (User, error)
@@ -92,4 +105,10 @@ type SessionRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (Session, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	DeleteExpired(ctx context.Context, before time.Time) (int64, error)
+}
+
+type UserKeypairRepo interface {
+	Create(ctx context.Context, kp UserKeypair) (UserKeypair, error)
+	GetByUserID(ctx context.Context, userID uuid.UUID) (UserKeypair, error)
+	GetByFingerprint(ctx context.Context, fingerprint string) (UserKeypair, error)
 }
