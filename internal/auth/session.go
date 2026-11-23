@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,15 +38,18 @@ func WithSessionClock(clock func() time.Time) SessionStoreOption {
 
 // SessionStore persists and manages server-side sessions.
 type SessionStore struct {
-	repo repository.SessionRepo
-	now  func() time.Time
+	repo     repository.SessionRepo
+	mu       sync.RWMutex
+	wrapKeys map[uuid.UUID][]byte
+	now      func() time.Time
 }
 
 // NewSessionStore creates a new SessionStore backed by repository.SessionRepo.
 func NewSessionStore(repo repository.SessionRepo, opts ...SessionStoreOption) *SessionStore {
 	store := &SessionStore{
-		repo: repo,
-		now:  time.Now,
+		repo:     repo,
+		wrapKeys: make(map[uuid.UUID][]byte),
+		now:      time.Now,
 	}
 	for _, opt := range opts {
 		opt(store)
@@ -71,6 +75,11 @@ func tokenToUUID(tokenStr string) (uuid.UUID, error) {
 // to the client, and stores its truncated SHA-256 hash as the session UUID in the database.
 // Sets expires_at = now + 30m.
 func (s *SessionStore) Create(ctx context.Context, userID uuid.UUID) (string, error) {
+	return s.CreateWithWrapKey(ctx, userID, nil)
+}
+
+// CreateWithWrapKey creates a session and stores the in-memory wrapKey.
+func (s *SessionStore) CreateWithWrapKey(ctx context.Context, userID uuid.UUID, wrapKey []byte) (string, error) {
 	rawToken := make([]byte, 32)
 	if _, err := rand.Read(rawToken); err != nil {
 		return "", fmt.Errorf("generate session token: %w", err)
@@ -94,7 +103,26 @@ func (s *SessionStore) Create(ctx context.Context, userID uuid.UUID) (string, er
 		return "", fmt.Errorf("store session: %w", err)
 	}
 
+	if len(wrapKey) > 0 {
+		s.mu.Lock()
+		s.wrapKeys[sessionID] = wrapKey
+		s.mu.Unlock()
+	}
+
 	return tokenStr, nil
+}
+
+// GetWrapKey retrieves the in-memory wrapKey for a session ID.
+func (s *SessionStore) GetWrapKey(sessionID uuid.UUID) []byte {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	wk := s.wrapKeys[sessionID]
+	if len(wk) == 0 {
+		return nil
+	}
+	cp := make([]byte, len(wk))
+	copy(cp, wk)
+	return cp
 }
 
 // Lookup retrieves a session by its token. Returns ErrSessionNotFound if missing
@@ -114,6 +142,14 @@ func (s *SessionStore) Lookup(ctx context.Context, tokenStr string) (*repository
 	}
 
 	if s.now().After(sess.ExpiresAt) {
+		s.mu.Lock()
+		if wk, exists := s.wrapKeys[sessionID]; exists {
+			for i := range wk {
+				wk[i] = 0
+			}
+			delete(s.wrapKeys, sessionID)
+		}
+		s.mu.Unlock()
 		_ = s.repo.Delete(ctx, sessionID)
 		return nil, ErrSessionExpired
 	}
@@ -127,6 +163,15 @@ func (s *SessionStore) Delete(ctx context.Context, tokenStr string) error {
 	if err != nil {
 		return ErrSessionNotFound
 	}
+
+	s.mu.Lock()
+	if wk, exists := s.wrapKeys[sessionID]; exists {
+		for i := range wk {
+			wk[i] = 0
+		}
+		delete(s.wrapKeys, sessionID)
+	}
+	s.mu.Unlock()
 
 	err = s.repo.Delete(ctx, sessionID)
 	if errors.Is(err, repository.ErrNotFound) {
