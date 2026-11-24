@@ -136,8 +136,6 @@ func VerifyPDF(ctx context.Context, pdfBytes []byte, keysSvc keys.Service, expec
 			if vErr := rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, attrDigest, cmsInfo.Signature); vErr == nil {
 				valid = true
 			}
-		} else {
-			// RawSignedAttrsSet is empty
 		}
 
 		signerID := "unknown"
