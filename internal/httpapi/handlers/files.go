@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ilhmpbta/CypherSecurity/internal/files"
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi/middleware"
+	"github.com/ilhmpbta/CypherSecurity/internal/keys"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 )
 
@@ -193,4 +194,121 @@ func (h *FilesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *FilesHandler) Sign(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.UserFromContext(r.Context())
+	if !ok || user == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	keysSess, ok := middleware.KeysSessionFromContext(r.Context())
+	if !ok || len(keysSess.WrapKey) == 0 {
+		respondError(w, http.StatusUnauthorized, "reauth_required")
+		return
+	}
+
+	idStr := r.PathValue("id")
+	fileID, err := uuid.Parse(idStr)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "not_found")
+		return
+	}
+
+	results, file, err := h.fileSvc.Sign(r.Context(), fileID, keysSess)
+	switch {
+	case errors.Is(err, keys.ErrSessionLocked):
+		respondError(w, http.StatusUnauthorized, "reauth_required")
+		return
+	case errors.Is(err, repository.ErrNotFound):
+		respondError(w, http.StatusNotFound, "not_found")
+		return
+	case errors.Is(err, files.ErrInvalidContentType):
+		respondError(w, http.StatusBadRequest, "invalid_content_type")
+		return
+	case err != nil:
+		respondError(w, http.StatusInternalServerError, "internal_error")
+		return
+	}
+
+	projected := make([]map[string]any, len(results))
+	for i, res := range results {
+		var certSub any
+		var certExp any
+		if res.Certificate != nil {
+			certSub = res.Certificate.Subject.String()
+			certExp = res.Certificate.NotAfter
+		}
+		projected[i] = map[string]any{
+			"valid":                  res.Valid,
+			"signer_id":              res.SignerID,
+			"signed_at":              res.SignedAt,
+			"reason":                 res.Reason,
+			"certificate_subject":    certSub,
+			"certificate_expires_at": certExp,
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"id":             file.ID,
+		"original_name":  file.OriginalName,
+		"content_type":   file.ContentType,
+		"plaintext_size": file.PlaintextSize,
+		"signatures":     projected,
+	})
+}
+
+func (h *FilesHandler) Verify(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.UserFromContext(r.Context())
+	if !ok || user == nil {
+		respondError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	idStr := r.PathValue("id")
+	fileID, err := uuid.Parse(idStr)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "not_found")
+		return
+	}
+
+	results, file, err := h.fileSvc.Verify(r.Context(), fileID, user.ID)
+	switch {
+	case errors.Is(err, repository.ErrNotFound):
+		respondError(w, http.StatusNotFound, "not_found")
+		return
+	case err != nil:
+		respondError(w, http.StatusInternalServerError, "internal_error")
+		return
+	}
+
+	projected := make([]map[string]any, len(results))
+	for i, res := range results {
+		var certSub any
+		var certExp any
+		if res.Certificate != nil {
+			certSub = res.Certificate.Subject.String()
+			certExp = res.Certificate.NotAfter
+		}
+		projected[i] = map[string]any{
+			"valid":                  res.Valid,
+			"signer_id":              res.SignerID,
+			"signed_at":              res.SignedAt,
+			"reason":                 res.Reason,
+			"certificate_subject":    certSub,
+			"certificate_expires_at": certExp,
+		}
+	}
+
+	valid := false
+	if len(results) > 0 {
+		valid = results[0].Valid
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"file_id": file.ID,
+		"valid":   valid,
+		"results": projected,
+	})
 }

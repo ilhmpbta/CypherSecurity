@@ -46,6 +46,11 @@ func sanitizeMetadata(m map[string]any) map[string]any {
 			strings.Contains(lower, "secret") ||
 			strings.Contains(lower, "session") ||
 			strings.Contains(lower, "wrapped_dek") ||
+			strings.Contains(lower, "wrapped") ||
+			strings.Contains(lower, "private") ||
+			strings.Contains(lower, "cert_der") ||
+			strings.Contains(lower, "wrap_key") ||
+			strings.Contains(lower, "wrapkey") ||
 			strings.Contains(lower, "nonce") ||
 			strings.Contains(lower, "plaintext") {
 			continue

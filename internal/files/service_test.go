@@ -69,6 +69,17 @@ func (f *fakeFileRepo) DeleteByOwner(ctx context.Context, id, ownerID uuid.UUID)
 	return nil
 }
 
+func (f *fakeFileRepo) UpdateForOwner(ctx context.Context, file repository.File) (repository.File, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	existing, ok := f.files[file.ID]
+	if !ok || existing.OwnerID != file.OwnerID {
+		return repository.File{}, repository.ErrNotFound
+	}
+	f.files[file.ID] = file
+	return file, nil
+}
+
 func setupTestService(t *testing.T) (*Service, *storage.FS, string) {
 	tmpDir := t.TempDir()
 	fs, err := storage.NewFS(tmpDir)

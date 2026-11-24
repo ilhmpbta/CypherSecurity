@@ -45,6 +45,8 @@ func (f *Fake) EnsureForUser(ctx context.Context, sess Session) (Keypair, error)
 		return Keypair{}, err
 	}
 
+	cert, _ := x509.ParseCertificate(certDER)
+
 	pubDER, _ := x509.MarshalPKIXPublicKey(&priv.PublicKey)
 
 	kp := Keypair{
@@ -53,7 +55,7 @@ func (f *Fake) EnsureForUser(ctx context.Context, sess Session) (Keypair, error)
 		PublicKey:      &priv.PublicKey,
 		PublicKeyDER:   pubDER,
 		Fingerprint:    fingerprint,
-		Certificate:    nil,
+		Certificate:    cert,
 		CertificateDER: certDER,
 		CertExpiresAt:  notAfter,
 		CreatedAt:      time.Now(),

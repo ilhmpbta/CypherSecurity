@@ -5,6 +5,8 @@ import (
 	"io"
 
 	"github.com/google/uuid"
+	"github.com/ilhmpbta/CypherSecurity/internal/keys"
+	"github.com/ilhmpbta/CypherSecurity/internal/pdfsign"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 )
 
@@ -19,6 +21,8 @@ type FileService interface {
 	List(ctx context.Context, ownerID uuid.UUID) ([]repository.File, error)
 	Download(ctx context.Context, id, ownerID uuid.UUID) (io.ReadCloser, repository.File, error)
 	Delete(ctx context.Context, id, ownerID uuid.UUID) error
+	Sign(ctx context.Context, id uuid.UUID, keysSess keys.Session) ([]pdfsign.SignatureVerificationResult, repository.File, error)
+	Verify(ctx context.Context, id, userID uuid.UUID) ([]pdfsign.SignatureVerificationResult, repository.File, error)
 }
 
 type RecordService interface {
