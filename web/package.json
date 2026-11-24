@@ -4,10 +4,13 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "clean": "rm -rf dist",
-    "build": "npm run clean && tsc && cp index.html dist/index.html && cp src/style.css dist/style.css"
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc && node -e \"const fs=require('fs'); fs.mkdirSync('dist',{recursive:true}); fs.copyFileSync('index.html','dist/index.html'); fs.copyFileSync('src/style.css','dist/style.css')\"",
+    "mock": "tsx mock/server.ts",
+    "mock:smoke": "tsx mock/smoke.ts"
   },
   "devDependencies": {
+    "tsx": "^4.19.2",
     "typescript": "^5.4.0"
   }
 }

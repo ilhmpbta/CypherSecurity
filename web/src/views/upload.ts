@@ -1,3 +1,5 @@
+import { API_BASE } from "../config.js";
+
 const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 
 const ACCEPTED_TYPES: readonly string[] = [
@@ -209,7 +211,7 @@ export function mountUploader(
     const file = selectedFile;
     const req = new XMLHttpRequest();
     xhr = req;
-    req.open("POST", "/api/files", true);
+    req.open("POST", `${API_BASE}/api/files`, true);
     req.withCredentials = true;
 
     const csrf = readCookie("csrf_token");
