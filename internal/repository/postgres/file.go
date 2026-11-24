@@ -110,3 +110,20 @@ func (r *FileRepo) DeleteByOwner(ctx context.Context, id, ownerID uuid.UUID) err
 	}
 	return nil
 }
+
+func (r *FileRepo) UpdateForOwner(ctx context.Context, f repository.File) (repository.File, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE stored_files
+		 SET storage_key = $1, plaintext_size = $2, ciphertext_size = $3
+		 WHERE id = $4 AND owner_id = $5`,
+		f.StorageKey, f.PlaintextSize, f.CiphertextSize,
+		toPgUUID(f.ID), toPgUUID(f.OwnerID),
+	)
+	if err != nil {
+		return repository.File{}, fmt.Errorf("update file: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return repository.File{}, repository.ErrNotFound
+	}
+	return f, nil
+}

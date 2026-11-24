@@ -5,11 +5,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"io"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/ilhmpbta/CypherSecurity/internal/crypto/production"
+	"github.com/ilhmpbta/CypherSecurity/internal/keys"
+	"github.com/ilhmpbta/CypherSecurity/internal/pdfsign"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 	"github.com/ilhmpbta/CypherSecurity/internal/storage"
 )
@@ -24,18 +27,31 @@ type Service struct {
 	repo        repository.FileRepo
 	fs          *storage.FS
 	km          *production.KeyManager
+	keysSvc     keys.Service
 	auditLogger AuditLogger
 	now         func() time.Time
 }
 
-func NewService(repo repository.FileRepo, fs *storage.FS, km *production.KeyManager, auditLogger AuditLogger) *Service {
-	return &Service{
+type ServiceOption func(*Service)
+
+func WithKeysService(keysSvc keys.Service) ServiceOption {
+	return func(s *Service) {
+		s.keysSvc = keysSvc
+	}
+}
+
+func NewService(repo repository.FileRepo, fs *storage.FS, km *production.KeyManager, auditLogger AuditLogger, opts ...ServiceOption) *Service {
+	s := &Service{
 		repo:        repo,
 		fs:          fs,
 		km:          km,
 		auditLogger: auditLogger,
 		now:         time.Now,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func generateStorageKey() (string, error) {
@@ -238,4 +254,177 @@ func (s *Service) Delete(ctx context.Context, id, ownerID uuid.UUID) error {
 	}
 
 	return nil
+}
+
+func (s *Service) Sign(ctx context.Context, id uuid.UUID, keysSess keys.Session) ([]pdfsign.SignatureVerificationResult, repository.File, error) {
+	if len(keysSess.WrapKey) == 0 {
+		return nil, repository.File{}, keys.ErrSessionLocked
+	}
+	file, err := s.repo.GetByIDForOwner(ctx, id, keysSess.UserID)
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+
+	dek, err := s.km.Unwrap(file.WrappedDEK, 1)
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+
+	blobReader, err := s.fs.Open(file.StorageKey)
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+	decryptR, err := production.NewReader(blobReader, dek)
+	if err != nil {
+		_ = blobReader.Close()
+		return nil, repository.File{}, err
+	}
+	pdfBytes, err := io.ReadAll(decryptR)
+	_ = blobReader.Close()
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+
+	isPDF := false
+	if file.ContentType == "application/pdf" {
+		isPDF = true
+	}
+	if len(pdfBytes) >= 5 && bytes.HasPrefix(pdfBytes, []byte("%PDF-")) {
+		isPDF = true
+	}
+	if !isPDF {
+		return nil, repository.File{}, ErrInvalidContentType
+	}
+
+	if s.keysSvc == nil {
+		return nil, repository.File{}, errors.New("keys service not configured")
+	}
+
+	signedPDF, err := pdfsign.SignPDF(ctx, pdfBytes, s.keysSvc, keysSess)
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+
+	newStorageKey, err := generateStorageKey()
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+
+	pr, pw := io.Pipe()
+	cw := &countingWriter{w: pw}
+	scr := &sizeCountingReader{r: bytes.NewReader(signedPDF), n: int64(len(signedPDF))}
+
+	go func() {
+		ew, err := production.NewWriter(cw, dek)
+		if err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		if _, err := io.Copy(ew, scr); err != nil {
+			_ = ew.Close()
+			_ = pw.CloseWithError(err)
+			return
+		}
+		if err := ew.Close(); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		_ = pw.Close()
+	}()
+
+	if err := s.fs.Write(newStorageKey, pr); err != nil {
+		_ = pr.CloseWithError(err)
+		_ = s.fs.Delete(newStorageKey)
+		return nil, repository.File{}, err
+	}
+
+	oldStorageKey := file.StorageKey
+	file.StorageKey = newStorageKey
+	file.PlaintextSize = int64(len(signedPDF))
+	file.CiphertextSize = cw.n
+
+	updatedFile, err := s.repo.UpdateForOwner(ctx, file)
+	if err != nil {
+		_ = s.fs.Delete(newStorageKey)
+		return nil, repository.File{}, err
+	}
+	_ = s.fs.Delete(oldStorageKey)
+
+	results, err := pdfsign.VerifyPDF(ctx, signedPDF, s.keysSvc, keysSess.UserID)
+	if err != nil {
+		return nil, updatedFile, err
+	}
+
+	if s.auditLogger != nil {
+		targetID := file.ID.String()
+		sigCount := len(results)
+		_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+			ActorID:  &keysSess.UserID,
+			Action:   "pdf.signed",
+			TargetID: &targetID,
+			Metadata: map[string]any{
+				"file_id":         file.ID.String(),
+				"user_id":         keysSess.UserID.String(),
+				"signature_count": sigCount,
+			},
+		})
+	}
+
+	return results, updatedFile, nil
+}
+
+func (s *Service) Verify(ctx context.Context, id, userID uuid.UUID) ([]pdfsign.SignatureVerificationResult, repository.File, error) {
+	file, err := s.repo.GetByIDForOwner(ctx, id, userID)
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+
+	dek, err := s.km.Unwrap(file.WrappedDEK, 1)
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+
+	blobReader, err := s.fs.Open(file.StorageKey)
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+	decryptR, err := production.NewReader(blobReader, dek)
+	if err != nil {
+		_ = blobReader.Close()
+		return nil, repository.File{}, err
+	}
+	pdfBytes, err := io.ReadAll(decryptR)
+	_ = blobReader.Close()
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+
+	results, err := pdfsign.VerifyPDF(ctx, pdfBytes, s.keysSvc, file.OwnerID)
+	if err != nil {
+		return nil, file, err
+	}
+
+	valid := false
+	reason := "no_signature"
+	if len(results) > 0 {
+		valid = results[0].Valid
+		reason = results[0].Reason
+	}
+
+	if s.auditLogger != nil {
+		targetID := file.ID.String()
+		_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+			ActorID:  &userID,
+			Action:   "pdf.verified",
+			TargetID: &targetID,
+			Metadata: map[string]any{
+				"file_id": file.ID.String(),
+				"user_id": userID.String(),
+				"valid":   valid,
+				"reason":  reason,
+			},
+		})
+	}
+
+	return results, file, nil
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/ilhmpbta/CypherSecurity/internal/crypto/production"
 	"github.com/ilhmpbta/CypherSecurity/internal/files"
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi"
+	"github.com/ilhmpbta/CypherSecurity/internal/keys"
 	"github.com/ilhmpbta/CypherSecurity/internal/migrations"
 	"github.com/ilhmpbta/CypherSecurity/internal/records"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository/postgres"
@@ -70,12 +71,14 @@ func run() error {
 	recordRepo := postgres.NewPersonalRecordRepo(pool)
 	auditRepo := postgres.NewAuditRepo(pool)
 	sessionRepo := postgres.NewSessionRepo(pool)
+	keypairRepo := postgres.NewUserKeypairRepo(pool)
 
 	// Services
 	auditLogger := audit.NewLogger(auditRepo)
 	sessionStore := auth.NewSessionStore(sessionRepo)
 	authSvc := auth.NewService(userRepo, sessionStore, auditLogger)
-	fileSvc := files.NewService(fileRepo, fs, km, auditLogger)
+	keysSvc := keys.NewDBService(keypairRepo, userRepo)
+	fileSvc := files.NewService(fileRepo, fs, km, auditLogger, files.WithKeysService(keysSvc))
 	recordSvc := records.NewService(recordRepo)
 
 	// Router
@@ -84,6 +87,7 @@ func run() error {
 		FileSvc:      fileSvc,
 		RecordSvc:    recordSvc,
 		AuditSvc:     auditLogger,
+		KeysSvc:      keysSvc,
 		UserRepo:     userRepo,
 		SessionStore: sessionStore,
 		Config:       cfg,

@@ -3,15 +3,16 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"time"
-    "io/fs"
 
-    "github.com/ilhmpbta/CypherSecurity/web"
 	"github.com/ilhmpbta/CypherSecurity/internal/config"
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi/handlers"
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi/middleware"
+	"github.com/ilhmpbta/CypherSecurity/internal/keys"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
+	"github.com/ilhmpbta/CypherSecurity/web"
 )
 
 type Deps struct {
@@ -19,6 +20,7 @@ type Deps struct {
 	FileSvc      handlers.FileService
 	RecordSvc    handlers.RecordService
 	AuditSvc     handlers.AuditService
+	KeysSvc      keys.Service
 	UserRepo     repository.UserRepo
 	SessionStore middleware.SessionStore
 	Config       *config.Config
@@ -90,6 +92,8 @@ func NewRouter(deps Deps) http.Handler {
 	apiMux.Handle("GET /api/files", apply(http.HandlerFunc(filesHandler.List), sessionMW))
 	apiMux.Handle("GET /api/files/{id}/download", apply(http.HandlerFunc(filesHandler.Download), sessionMW))
 	apiMux.Handle("DELETE /api/files/{id}", apply(http.HandlerFunc(filesHandler.Delete), sessionMW))
+	apiMux.Handle("POST /api/files/{id}/sign", apply(http.HandlerFunc(filesHandler.Sign), sessionMW))
+	apiMux.Handle("GET /api/files/{id}/verify", apply(http.HandlerFunc(filesHandler.Verify), sessionMW))
 
 	// Record routes
 	apiMux.Handle("GET /api/records", apply(http.HandlerFunc(recordsHandler.List), sessionMW))
@@ -108,15 +112,15 @@ func NewRouter(deps Deps) http.Handler {
 	sub, err := fs.Sub(web.Dist, "dist")
 	if err == nil {
 		static := http.FileServer(http.FS(sub))
-		
+
 		mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-	    if r.Method != http.MethodGet && r.Method != http.MethodHead {
-	        w.Header().Set("Allow", "GET, HEAD")
-	        http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	        return
-	    }
-					
-	    static.ServeHTTP(w, r)
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				w.Header().Set("Allow", "GET, HEAD")
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			static.ServeHTTP(w, r)
 		}))
 	}
 

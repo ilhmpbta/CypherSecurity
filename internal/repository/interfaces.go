@@ -84,6 +84,7 @@ type FileRepo interface {
 	GetByIDForOwner(ctx context.Context, id, ownerID uuid.UUID) (File, error)
 	ListByOwner(ctx context.Context, ownerID uuid.UUID) ([]File, error)
 	DeleteByOwner(ctx context.Context, id, ownerID uuid.UUID) error
+	UpdateForOwner(ctx context.Context, f File) (File, error)
 }
 
 type PersonalRecordRepo interface {

@@ -15,6 +15,8 @@ import (
 	"github.com/ilhmpbta/CypherSecurity/internal/config"
 	"github.com/ilhmpbta/CypherSecurity/internal/files"
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi"
+	"github.com/ilhmpbta/CypherSecurity/internal/keys"
+	"github.com/ilhmpbta/CypherSecurity/internal/pdfsign"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
 	"github.com/stretchr/testify/assert"
 )
@@ -49,6 +51,12 @@ func (f *fakeFileService) Delete(ctx context.Context, id, ownerID uuid.UUID) err
 		return f.deleteFn(ctx, id, ownerID)
 	}
 	return nil
+}
+func (f *fakeFileService) Sign(ctx context.Context, id uuid.UUID, keysSess keys.Session) ([]pdfsign.SignatureVerificationResult, repository.File, error) {
+	return nil, repository.File{}, nil
+}
+func (f *fakeFileService) Verify(ctx context.Context, id, userID uuid.UUID) ([]pdfsign.SignatureVerificationResult, repository.File, error) {
+	return nil, repository.File{}, nil
 }
 
 type fakeRecordService struct {
