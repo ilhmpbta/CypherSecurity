@@ -1,4 +1,4 @@
-import { ApiError, apiFetchBlob } from "../api.js";
+import { ApiError, apiFetchBlob, isSessionExpired } from "../api.js";
 import { friendlyMessage } from "../errors.js";
 import { importShare, listOutgoing } from "./api.js";
 import { downloadBlob } from "./download.js";
@@ -35,6 +35,10 @@ export function mountOutgoing(container: HTMLElement, username: string): () => v
   const list = container.querySelector<HTMLUListElement>("#outgoing-list")!;
 
   const showRowError = (li: HTMLLIElement, e: unknown): void => {
+    if (isSessionExpired(e)) {
+      location.reload();
+      return;
+    }
     let el = li.querySelector<HTMLParagraphElement>(".row-error");
     if (!el) {
       el = document.createElement("p");
@@ -88,7 +92,11 @@ export function mountOutgoing(container: HTMLElement, username: string): () => v
           );
           downloadBlob(result.blob, result.filename);
         } catch (e) {
-          showRowError(li, e);
+          if (typeof e === "object" && e !== null && (e as ApiError).code === "forbidden") {
+            showRowError(li, { code: "revoked", status: 403 } satisfies ApiError);
+          } else {
+            showRowError(li, e);
+          }
         } finally {
           download.disabled = false;
         }
@@ -110,6 +118,10 @@ export function mountOutgoing(container: HTMLElement, username: string): () => v
       for (const share of result.shares) list.appendChild(renderRow(share));
     } catch (e) {
       loading.hidden = true;
+      if (isSessionExpired(e)) {
+        location.reload();
+        return;
+      }
       const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
       error.textContent = friendlyMessage(code);
       error.hidden = false;
@@ -133,6 +145,10 @@ export function mountOutgoing(container: HTMLElement, username: string): () => v
         error.hidden = true;
         await load();
       } catch (e) {
+        if (isSessionExpired(e)) {
+          location.reload();
+          return;
+        }
         const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
         error.textContent = friendlyMessage(code);
         error.hidden = false;

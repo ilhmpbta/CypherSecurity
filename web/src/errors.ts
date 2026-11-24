@@ -30,8 +30,9 @@ const MESSAGES: Record<string, string> = {
   // frontend-generated (web/src/api.ts)
   csrf_unavailable: "Could not reach the server — please reload",
   reauth_required: "Your session is locked. Enter your password to continue",
+  reauth_cancelled: "Password re-entry was cancelled",
   session_expired: "Please sign in again",
-  invalid_transition: "This share is no longer in the required state",
+  invalid_transition: "This share was revoked or is no longer in the required state",
   forbidden: "You do not have permission to perform this action",
   validation_failed: "The .cskey file is invalid or has been tampered with",
   invalid_content_type: "Only PDF files can be signed",

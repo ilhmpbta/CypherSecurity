@@ -34,5 +34,4 @@ export function renderSharesPage(root: HTMLElement, username: string, onBack: ()
     location.hash = "#shares/outgoing";
   });
   activate();
-  window.addEventListener("hashchange", activate);
 }

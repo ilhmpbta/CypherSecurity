@@ -1,4 +1,4 @@
-import { ApiError } from "../api.js";
+import { ApiError, isSessionExpired } from "../api.js";
 import { friendlyMessage } from "../errors.js";
 import { approveShare, exportShare, listInbox, rejectShare, revokeShare } from "./api.js";
 import { downloadBlob } from "./download.js";
@@ -35,6 +35,10 @@ export function mountInbox(container: HTMLElement, username: string): () => void
   const list = container.querySelector<HTMLUListElement>("#inbox-list")!;
 
   const showRowError = (li: HTMLLIElement, e: unknown): void => {
+    if (isSessionExpired(e)) {
+      location.reload();
+      return;
+    }
     let el = li.querySelector<HTMLParagraphElement>(".row-error");
     if (!el) {
       el = document.createElement("p");
@@ -139,6 +143,10 @@ export function mountInbox(container: HTMLElement, username: string): () => void
       for (const share of result.shares) list.appendChild(renderRow(share));
     } catch (e) {
       loading.hidden = true;
+      if (isSessionExpired(e)) {
+        location.reload();
+        return;
+      }
       const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
       error.textContent = friendlyMessage(code);
       error.hidden = false;

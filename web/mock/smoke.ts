@@ -36,6 +36,20 @@ async function json<T>(response: Response): Promise<T> {
   return await response.json() as T;
 }
 
+async function assertError(
+  response: Response,
+  expectedStatus: number,
+  expectedCode: string,
+): Promise<void> {
+  if (response.status !== expectedStatus) {
+    throw new Error(`expected ${expectedStatus} ${expectedCode}, got ${response.status}`);
+  }
+  const body = await json<{ error?: { code?: string } }>(response);
+  if (body.error?.code !== expectedCode) {
+    throw new Error(`expected error ${expectedCode}, got ${body.error?.code ?? "unknown"}`);
+  }
+}
+
 async function login(jar: CookieJar, username: string): Promise<void> {
   await request(jar, "/api/auth/me");
   const response = await request(jar, "/api/auth/login", {
@@ -91,7 +105,7 @@ async function main(): Promise<void> {
     headers: { "Content-Type": "application/octet-stream" },
     body: tampered,
   });
-  if (tamperedResponse.status !== 400) throw new Error(`tamper status ${tamperedResponse.status}`);
+  await assertError(tamperedResponse, 400, "validation_failed");
 
   const importResponse = await request(bob, "/api/shares/import", {
     method: "POST",
@@ -99,6 +113,12 @@ async function main(): Promise<void> {
     body: blob,
   });
   if (!importResponse.ok) throw new Error(`import failed: ${await importResponse.text()}`);
+  const reimportResponse = await request(bob, "/api/shares/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: blob,
+  });
+  if (reimportResponse.status !== 200) throw new Error(`re-import status ${reimportResponse.status}`);
 
   const download = await request(bob, `/api/files/${report.id}/download`);
   if (!download.ok) throw new Error(`download failed: ${await download.text()}`);
@@ -112,20 +132,20 @@ async function main(): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file_id: bobOwn.id }),
   });
-  if (ownRequest.status !== 403) throw new Error(`own file status ${ownRequest.status}`);
+  await assertError(ownRequest, 403, "forbidden");
 
   const revoke = await request(alice, `/api/shares/${share.id}/revoke`, { method: "POST" });
   if (!revoke.ok) throw new Error(`revoke failed: ${await revoke.text()}`);
 
   const postRevokeDownload = await request(bob, `/api/files/${report.id}/download`);
-  if (postRevokeDownload.status !== 403) throw new Error(`post-revoke download ${postRevokeDownload.status}`);
+  await assertError(postRevokeDownload, 403, "forbidden");
 
   const postRevokeImport = await request(bob, "/api/shares/import", {
     method: "POST",
     headers: { "Content-Type": "application/octet-stream" },
     body: blob,
   });
-  if (postRevokeImport.status !== 409) throw new Error(`post-revoke import ${postRevokeImport.status}`);
+  await assertError(postRevokeImport, 409, "invalid_transition");
 
   console.log("CypherSecurity mock smoke flow passed");
 }

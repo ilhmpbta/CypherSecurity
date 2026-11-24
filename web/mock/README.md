@@ -33,6 +33,9 @@ For a cross-origin backend, set `API_BASE` in `web/src/config.ts` to the backend
 - Share statuses are `pending`, `approved`, `rejected`, or `revoked`.
 - Fingerprints are 64-character hexadecimal strings.
 - A malformed or tampered `.cskey` blob returns `400 validation_failed`.
+- The mock uses deterministic synthetic wrapped-key bytes and an HMAC signature; it is not cryptographic production behavior.
+- Seeded verification results are `valid` for `report.pdf`, `content_modified` for `notes.txt`, and `unknown_signer` for Bob's file. Newly uploaded files report `no_signature`.
+- Signing and verification results are canned; no PDF bytes are changed.
 
 ## Final cleanup
 

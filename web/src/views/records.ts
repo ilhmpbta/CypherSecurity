@@ -1,3 +1,5 @@
+import { API_BASE } from "../config.js";
+
 interface PersonalRecord {
   id: string;
   data_type: string;
@@ -46,7 +48,7 @@ export function renderRecordsList(root: HTMLElement, onBack: () => void): void {
   const load = async (): Promise<void> => {
     errEl.hidden = true;
     try {
-      const res = await fetch("/api/records", { credentials: "same-origin" });
+      const res = await fetch(`${API_BASE}/api/records`, { credentials: "same-origin" });
       if (res.status === 401) { location.reload(); return; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as ListResponse;
@@ -93,7 +95,7 @@ export function renderRecordsList(root: HTMLElement, onBack: () => void): void {
         btn.disabled = true;
         try {
           const csrf = readCookie("csrf_token");
-          const res = await fetch(`/api/records/${encodeURIComponent(r.id)}`, {
+          const res = await fetch(`${API_BASE}/api/records/${encodeURIComponent(r.id)}`, {
             method: "DELETE",
             credentials: "same-origin",
             headers: csrf ? { "X-CSRF-Token": csrf } : {},
@@ -174,7 +176,9 @@ export function renderRecordsList(root: HTMLElement, onBack: () => void): void {
 
       try {
         const csrf = readCookie("csrf_token");
-        const url = isEdit ? `/api/records/${encodeURIComponent(existingRecord.id)}` : "/api/records";
+        const url = isEdit
+          ? `${API_BASE}/api/records/${encodeURIComponent(existingRecord.id)}`
+          : `${API_BASE}/api/records`;
         const method = isEdit ? "PATCH" : "POST";
 
         const res = await fetch(url, {

@@ -117,7 +117,7 @@ export function renderFileList(
           const waiting = document.createElement("span");
           waiting.textContent = "Request pending";
           actions.appendChild(waiting);
-        } else if (shareState === "approved" || shareState === "imported") {
+        } else if (shareState === "imported") {
           const download = document.createElement("button");
           download.type = "button";
           download.textContent = "Download";
@@ -130,14 +130,24 @@ export function renderFileList(
               );
               downloadBlob(result.blob, result.filename);
             } catch (e) {
+              if (isSessionExpired(e)) {
+                location.reload();
+                return;
+              }
               const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
-              inlineError.textContent = friendlyMessage(code);
+              inlineError.textContent = code === "forbidden"
+                ? friendlyMessage("revoked")
+                : friendlyMessage(code);
               inlineError.hidden = false;
             } finally {
               download.disabled = false;
             }
           });
           actions.appendChild(download);
+        } else if (shareState === "approved") {
+          const waiting = document.createElement("span");
+          waiting.textContent = "Approved — import the .cskey in Shares";
+          actions.appendChild(waiting);
         } else if (shareState === "revoked") {
           const revoked = document.createElement("span");
           revoked.textContent = "Revoked by owner";
@@ -147,12 +157,15 @@ export function renderFileList(
           request.type = "button";
           request.textContent = "Request Access";
           request.addEventListener("click", async () => {
-            const note = window.prompt("Add a note (optional)") ?? "";
             request.disabled = true;
             try {
-              await requestShare(f.id, note);
+              await requestShare(f.id, "");
               await load();
             } catch (e) {
+              if (isSessionExpired(e)) {
+                location.reload();
+                return;
+              }
               const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
               inlineError.textContent = friendlyMessage(code);
               inlineError.hidden = false;
@@ -180,6 +193,10 @@ export function renderFileList(
             const result = await apiFetchBlob(`/api/files/${encodeURIComponent(f.id)}/download`);
             downloadBlob(result.blob, result.filename);
           } catch (e) {
+            if (isSessionExpired(e)) {
+              location.reload();
+              return;
+            }
             const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
             inlineError.textContent = friendlyMessage(code);
             inlineError.hidden = false;
@@ -197,6 +214,10 @@ export function renderFileList(
             await apiFetch<void>(`/api/files/${encodeURIComponent(f.id)}`, { method: "DELETE" });
             await load();
           } catch (e) {
+            if (isSessionExpired(e)) {
+              location.reload();
+              return;
+            }
             const code = typeof e === "object" && e !== null ? (e as ApiError).code : "unknown";
             inlineError.textContent = friendlyMessage(code);
             inlineError.hidden = false;

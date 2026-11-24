@@ -24,6 +24,7 @@ interface FileRow {
   created_at: string;
   owner_id: string;
   bytes: Buffer;
+  verify_status: "valid" | "content_modified" | "unknown_signer" | "no_signature";
 }
 
 interface ShareRow {
@@ -60,18 +61,21 @@ const files = new Map<string, FileRow>([
     original_name: "report.pdf", content_type: "application/pdf",
     plaintext_size: 21, created_at: "2026-10-27T10:00:00Z",
     owner_id: users[0].id, bytes: Buffer.from("CYPHER-PDF-DEMO-BYTES"),
+    verify_status: "valid",
   }],
   ["f2222222-2222-4222-8222-222222222222", {
     id: "f2222222-2222-4222-8222-222222222222",
     original_name: "notes.txt", content_type: "text/plain",
     plaintext_size: 20, created_at: "2026-10-27T10:05:00Z",
     owner_id: users[0].id, bytes: Buffer.from("Alice confidential notes"),
+    verify_status: "content_modified",
   }],
   ["f3333333-3333-4333-8333-333333333333", {
     id: "f3333333-3333-4333-8333-333333333333",
     original_name: "bob-evidence.txt", content_type: "text/plain",
     plaintext_size: 18, created_at: "2026-10-27T10:10:00Z",
     owner_id: users[1].id, bytes: Buffer.from("Bob evidence demo."),
+    verify_status: "unknown_signer",
   }],
 ]);
 
@@ -112,7 +116,7 @@ function guardKeys(value: unknown): boolean {
   if (Array.isArray(value)) return value.every(guardKeys);
   if (!value || typeof value !== "object") return true;
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-    if (/^(dek|wrapped_key|wrapped|private|wrapkey|cert_der)$/i.test(key)) return false;
+    if (/(dek|wrapped|private|wrapkey|cert_der)/i.test(key)) return false;
     if (!guardKeys(child)) return false;
   }
   return true;
@@ -251,11 +255,15 @@ const server = http.createServer(async (req, res) => {
     if (pathname === "/mock/lock" && method === "POST") {
       const session = sessionFor(req);
       if (!session) { error(res, 401, "session_expired"); return; }
+      if (!requireCsrf(req, res, session)) return;
       session.wrapKey = null;
       json(res, 200, { locked: true });
       return;
     }
     if (pathname === "/mock/reset" && method === "POST") {
+      const session = sessionFor(req);
+      if (!session) { error(res, 401, "session_expired"); return; }
+      if (!requireCsrf(req, res, session)) return;
       shares.clear();
       for (const session of sessions.values()) session.wrapKey = Buffer.alloc(32, 7);
       json(res, 200, { reset: true });
@@ -380,6 +388,7 @@ const server = http.createServer(async (req, res) => {
       id, original_name: name, content_type: contentType.includes("multipart") ? "application/octet-stream" : "application/octet-stream",
       plaintext_size: body.length, created_at: new Date().toISOString(), owner_id: session.userId,
       bytes: body,
+      verify_status: "no_signature",
     });
     json(res, 201, { id, original_name: name });
     return;
@@ -433,10 +442,7 @@ const server = http.createServer(async (req, res) => {
       if (file.owner_id !== session.userId && !activeShare(session.userId, fileId)) {
         error(res, 403, "forbidden"); return;
       }
-      const statusByFile: Record<string, string> = {
-        "f1111111-1111-4111-8111-111111111111": "valid",
-      };
-      const status = statusByFile[fileId] ?? "no_signature";
+      const status = file.verify_status;
       json(res, 200, {
         status,
         signer: status === "valid" ? {
@@ -536,7 +542,13 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === "/api/shares/import" && method === "POST") {
     if (!requireCsrf(req, res, session)) return;
+    const contentType = (req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+    if (contentType !== "application/octet-stream") {
+      error(res, 400, "invalid_content_type");
+      return;
+    }
     const blob = await readBody(req);
+    if (blob.length > 8 * 1024) { error(res, 413, "too_large"); return; }
     if (blob.length < 112) { error(res, 400, "validation_failed"); return; }
     const n = blob.length >= 108 ? blob.readUInt16BE(106) : 0;
     let shareId = "";
@@ -546,6 +558,7 @@ const server = http.createServer(async (req, res) => {
       if (!possible) { error(res, 404, "not_found"); return; }
       if (possible.requester.id !== session.userId) { error(res, 403, "forbidden"); return; }
       if (possible.revoked_at || possible.status === "revoked") { error(res, 409, "invalid_transition"); return; }
+      if (possible.status !== "approved") { error(res, 409, "invalid_transition"); return; }
       if (!verifyBlob(blob, possible)) { error(res, 400, "validation_failed"); return; }
       if (possible.imported_at) { json(res, 200, publicShare(possible)); return; }
       possible.imported_at = new Date().toISOString();

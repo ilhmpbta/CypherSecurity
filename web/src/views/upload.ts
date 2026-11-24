@@ -1,3 +1,5 @@
+import { API_BASE } from "../config.js";
+
 const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 
 const ACCEPTED_TYPES: readonly string[] = [
@@ -276,4 +278,3 @@ export function mountUploader(
     dropzone.removeEventListener("drop", onDrop);
   };
 }
-import { API_BASE } from "../config.js";
