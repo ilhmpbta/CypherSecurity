@@ -127,15 +127,14 @@ func FindMaxObjNum(data []byte) (int, error) {
 
 // ExtractPagesRef parses the /Pages reference from the Catalog object or defaults to "2 0 R".
 func ExtractPagesRef(data []byte, rootObjNum int) string {
-	// Search for catalog object in data
-	objHeader := fmt.Sprintf("%d 0 obj", rootObjNum)
-	idx := bytes.Index(data, []byte(objHeader))
-	if idx == -1 {
-		// Try general object header search
+	// Search for catalog object in data using robust object header matching
+	objHeaderPattern := regexp.MustCompile(fmt.Sprintf(`(?m)(?:^|[\r\n])\s*%d\s+\d+\s+obj`, rootObjNum))
+	loc := objHeaderPattern.FindIndex(data)
+	if loc == nil {
 		return "2 0 R"
 	}
 
-	searchScope := data[idx:]
+	searchScope := data[loc[0]:]
 	if len(searchScope) > 4096 {
 		searchScope = searchScope[:4096]
 	}

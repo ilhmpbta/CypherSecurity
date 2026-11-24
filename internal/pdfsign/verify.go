@@ -135,11 +135,9 @@ func VerifyPDF(ctx context.Context, pdfBytes []byte, keysSvc keys.Service, expec
 			attrDigest := sha256Sum(cmsInfo.RawSignedAttrsSet)
 			if vErr := rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, attrDigest, cmsInfo.Signature); vErr == nil {
 				valid = true
-			} else {
-				println("RSA VerifyPKCS1v15 failed:", vErr.Error())
 			}
 		} else {
-			println("RawSignedAttrsSet is empty during VerifyPDF")
+			// RawSignedAttrsSet is empty
 		}
 
 		signerID := "unknown"
