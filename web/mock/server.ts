@@ -25,6 +25,7 @@ interface FileRow {
   owner_id: string;
   bytes: Buffer;
   verify_status: "valid" | "content_modified" | "unknown_signer" | "no_signature";
+  signature_count: number;
 }
 
 interface ShareRow {
@@ -61,21 +62,49 @@ const files = new Map<string, FileRow>([
     original_name: "report.pdf", content_type: "application/pdf",
     plaintext_size: 21, created_at: "2026-10-27T10:00:00Z",
     owner_id: users[0].id, bytes: Buffer.from("CYPHER-PDF-DEMO-BYTES"),
-    verify_status: "valid",
+    verify_status: "no_signature", signature_count: 0,
   }],
   ["f2222222-2222-4222-8222-222222222222", {
     id: "f2222222-2222-4222-8222-222222222222",
     original_name: "notes.txt", content_type: "text/plain",
-    plaintext_size: 20, created_at: "2026-10-27T10:05:00Z",
+    plaintext_size: 24, created_at: "2026-10-27T10:05:00Z",
     owner_id: users[0].id, bytes: Buffer.from("Alice confidential notes"),
-    verify_status: "content_modified",
+    verify_status: "no_signature", signature_count: 0,
   }],
   ["f3333333-3333-4333-8333-333333333333", {
     id: "f3333333-3333-4333-8333-333333333333",
     original_name: "bob-evidence.txt", content_type: "text/plain",
     plaintext_size: 18, created_at: "2026-10-27T10:10:00Z",
     owner_id: users[1].id, bytes: Buffer.from("Bob evidence demo."),
-    verify_status: "unknown_signer",
+    verify_status: "no_signature", signature_count: 0,
+  }],
+  ["f4444444-4444-4444-8444-444444444444", {
+    id: "f4444444-4444-4444-8444-444444444444",
+    original_name: "signed.pdf", content_type: "application/pdf",
+    plaintext_size: 24, created_at: "2026-10-27T10:15:00Z",
+    owner_id: users[0].id, bytes: Buffer.from("CYPHER-SIGNED-PDF-DEMO"),
+    verify_status: "valid", signature_count: 1,
+  }],
+  ["f5555555-5555-4555-8555-555555555555", {
+    id: "f5555555-5555-4555-8555-555555555555",
+    original_name: "tampered.pdf", content_type: "application/pdf",
+    plaintext_size: 27, created_at: "2026-10-27T10:20:00Z",
+    owner_id: users[0].id, bytes: Buffer.from("CYPHER-TAMPERED-PDF-DEMO"),
+    verify_status: "content_modified", signature_count: 1,
+  }],
+  ["f6666666-6666-4666-8666-666666666666", {
+    id: "f6666666-6666-4666-8666-666666666666",
+    original_name: "foreign.pdf", content_type: "application/pdf",
+    plaintext_size: 24, created_at: "2026-10-27T10:25:00Z",
+    owner_id: users[0].id, bytes: Buffer.from("CYPHER-FOREIGN-PDF-DEMO"),
+    verify_status: "unknown_signer", signature_count: 1,
+  }],
+  ["f7777777-7777-4777-8777-777777777777", {
+    id: "f7777777-7777-4777-8777-777777777777",
+    original_name: "multi.pdf", content_type: "application/pdf",
+    plaintext_size: 22, created_at: "2026-10-27T10:30:00Z",
+    owner_id: users[0].id, bytes: Buffer.from("CYPHER-MULTI-PDF-DEMO"),
+    verify_status: "valid", signature_count: 2,
   }],
 ]);
 
@@ -97,7 +126,7 @@ function readCookie(header: string | undefined, name: string): string | undefine
 }
 
 function sessionFor(req: http.IncomingMessage): Session | undefined {
-  const cookie = readCookie(req.headers.cookie, "session");
+  const cookie = readCookie(req.headers.cookie, "session_id");
   return cookie ? sessions.get(cookie) : undefined;
 }
 
@@ -269,6 +298,17 @@ const server = http.createServer(async (req, res) => {
       json(res, 200, { reset: true });
       return;
     }
+    const tamperMatch = pathname.match(/^\/mock\/tamper\/([^/]+)$/);
+    if (tamperMatch && method === "POST") {
+      const session = sessionFor(req);
+      if (!session) { error(res, 401, "session_expired"); return; }
+      if (!requireCsrf(req, res, session)) return;
+      const file = files.get(decodeURIComponent(tamperMatch[1]));
+      if (!file) { error(res, 404, "not_found"); return; }
+      file.verify_status = "content_modified";
+      json(res, 200, { tampered: true });
+      return;
+    }
   }
 
   const session = sessionFor(req);
@@ -317,7 +357,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (!user) { error(res, 401, "session_expired"); return; }
       sessions.set(cookieId, { userId: user.id, wrapKey: Buffer.alloc(32, 7), csrf });
-      setCookie(res, "session", cookieId, true);
+      setCookie(res, "session_id", cookieId, true);
       setCookie(res, "csrf_token", csrf);
       json(res, 200, { id: user.id, username: user.username });
       return;
@@ -333,7 +373,7 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === "/api/auth/logout" && method === "POST") {
     if (!session || !requireCsrf(req, res, session)) { if (!session) error(res, 401, "session_expired"); return; }
-    const cookie = readCookie(req.headers.cookie, "session");
+    const cookie = readCookie(req.headers.cookie, "session_id");
     if (cookie) sessions.delete(cookie);
     json(res, 200, {});
     return;
@@ -347,7 +387,7 @@ const server = http.createServer(async (req, res) => {
       const owned = file.owner_id === current.id;
       const pending = [...shares.values()].find((share) =>
         share.requester.id === current.id && share.file_id === file.id && share.status === "pending");
-      const shareRow = [...shares.values()].find((share) =>
+      const shareRow = [...shares.values()].reverse().find((share) =>
         share.requester.id === current.id && share.file_id === file.id &&
         share.status !== "rejected");
       let shareState: "none" | "pending" | "approved" | "imported" | "revoked" = "none";
@@ -389,6 +429,7 @@ const server = http.createServer(async (req, res) => {
       plaintext_size: body.length, created_at: new Date().toISOString(), owner_id: session.userId,
       bytes: body,
       verify_status: "no_signature",
+      signature_count: 0,
     });
     json(res, 201, { id, original_name: name });
     return;
@@ -430,11 +471,19 @@ const server = http.createServer(async (req, res) => {
     if (suffix === "/sign" && method === "POST") {
       if (!requireCsrf(req, res, session)) return;
       if (file.owner_id !== session.userId) { error(res, 403, "forbidden"); return; }
-      if (file.content_type !== "application/pdf" && !file.original_name.toLowerCase().endsWith(".pdf")) {
+      if (file.content_type !== "application/pdf") {
         error(res, 400, "invalid_content_type"); return;
       }
       if (!session.wrapKey) { error(res, 401, "reauth_required"); return; }
-      json(res, 200, { signed: true, status: "valid" });
+      file.signature_count++;
+      file.verify_status = "valid";
+      const signedAt = new Date().toISOString();
+      json(res, 200, {
+        file_id: file.id,
+        signature_count: file.signature_count,
+        signed_at: signedAt,
+        signer_fingerprint: userById(session.userId)!.fingerprint,
+      });
       return;
     }
 
@@ -443,13 +492,34 @@ const server = http.createServer(async (req, res) => {
         error(res, 403, "forbidden"); return;
       }
       const status = file.verify_status;
+      const signed = file.signature_count > 0;
+      const valid = signed && status === "valid";
+      const reason = signed ? (valid ? null : status) : "no_signature";
+      const signatures = Array.from({ length: file.signature_count }, (_, index) => {
+        const signer = status === "unknown_signer"
+          ? { user_id: null, username: null, fingerprint: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }
+          : { user_id: users[0].id, username: "alice", fingerprint: users[0].fingerprint };
+        const signatureValid = status === "valid";
+        const signatureReason = signatureValid ? null : status === "content_modified" || status === "unknown_signer" ? status : null;
+        return {
+          valid: signatureValid,
+          reason: signatureReason,
+          signer,
+          signed_at: new Date(Date.UTC(2026, 9, 27, 10, index)).toISOString(),
+          certificate: {
+            subject: `CN=${signer.username ?? "unknown signer"}`,
+            issuer: `CN=${signer.username ?? "unknown signer"}`,
+            serial: `${index + 1}`,
+            not_before: "2026-01-01T00:00:00Z",
+            not_after: "2027-10-27T10:00:00Z",
+          },
+        };
+      });
       json(res, 200, {
-        status,
-        signer: status === "valid" ? {
-          username: "alice",
-          fingerprint: users[0].fingerprint,
-        } : null,
-        certificate: status === "valid" ? { subject: "CN=alice", expires_at: "2027-10-27T10:00:00Z" } : null,
+        signed,
+        valid,
+        reason,
+        signatures,
       });
       return;
     }

@@ -5,6 +5,7 @@ import type { Session } from "./auth/session.js";
 import { renderFileList } from "./views/fileList.js";
 import { renderRecordsList } from "./views/records.js";
 import { renderSharesPage } from "./shares/sharesPage.js";
+import { renderFileDetail } from "./views/fileDetail.js";
 
 const root = document.getElementById("app");
 if (!root) {
@@ -44,7 +45,12 @@ export async function boot(): Promise<void> {
     renderSharesPage(root!, session.username, () => {
       location.hash = "";
     });
-  }else {
+  } else if (location.hash.startsWith("#file/")) {
+    const fileId = decodeURIComponent(location.hash.slice("#file/".length));
+    renderFileDetail(root!, fileId, session.username, () => {
+      location.hash = "";
+    });
+  } else {
     renderFileList(root!, session, () => {
       void logout();
     });
