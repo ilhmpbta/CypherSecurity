@@ -207,34 +207,6 @@ func getCSRFToken(t *testing.T, router http.Handler, token string) string {
 	return ""
 }
 
-func uploadTestPDF(t *testing.T, router http.Handler, token string, pdfBytes []byte, filename string) string {
-	csrf := getCSRFToken(t, router, token)
-
-	body := &bytes.Buffer{}
-	mw := multipart.NewWriter(body)
-	part, err := mw.CreateFormFile("file", filename)
-	require.NoError(t, err)
-	_, err = part.Write(pdfBytes)
-	require.NoError(t, err)
-	require.NoError(t, mw.Close())
-
-	req, _ := http.NewRequest("POST", "/api/files", body)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.AddCookie(&http.Cookie{Name: "session_id", Value: token})
-	if csrf != "" {
-		req.AddCookie(&http.Cookie{Name: "csrf_token", Value: csrf})
-		req.Header.Set("X-CSRF-Token", csrf)
-	}
-
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusCreated, rec.Code)
-
-	// parse ID from response
-	// simple regex or unmarshal json
-	return rec.Body.String()
-}
-
 func TestPDFSignAndVerifyEndToEnd(t *testing.T) {
 	router, _, token, _, auditRepo := setupTestEnvironment(t)
 	pdfBytes := generateValidTestPDFBytes()

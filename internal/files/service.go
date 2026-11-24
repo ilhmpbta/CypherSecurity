@@ -285,13 +285,7 @@ func (s *Service) Sign(ctx context.Context, id uuid.UUID, keysSess keys.Session)
 		return nil, repository.File{}, err
 	}
 
-	isPDF := false
-	if file.ContentType == "application/pdf" {
-		isPDF = true
-	}
-	if len(pdfBytes) >= 5 && bytes.HasPrefix(pdfBytes, []byte("%PDF-")) {
-		isPDF = true
-	}
+	isPDF := file.ContentType == "application/pdf" || (len(pdfBytes) >= 5 && bytes.HasPrefix(pdfBytes, []byte("%PDF-")))
 	if !isPDF {
 		return nil, repository.File{}, ErrInvalidContentType
 	}
