@@ -96,6 +96,7 @@ export function renderFileList(
         <div class="file-meta">
           <strong class="file-name"></strong>
           <span class="file-detail"></span>
+          <a class="file-details" href="#">Details</a>
         </div>
         <div class="file-actions">
           <span class="file-inline-error" role="alert" hidden></span>
@@ -106,6 +107,8 @@ export function renderFileList(
       
       li.querySelector<HTMLElement>(".file-detail")!.textContent =
         `${formatBytes(f.plaintext_size)} · ${f.content_type} · ${new Date(f.created_at).toLocaleString()}`;
+      const details = li.querySelector<HTMLAnchorElement>(".file-details")!;
+      details.href = `#file/${encodeURIComponent(f.id)}`;
 
       const actions = li.querySelector<HTMLElement>(".file-actions")!;
       const inlineError = li.querySelector<HTMLSpanElement>(".file-inline-error")!;

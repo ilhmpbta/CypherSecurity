@@ -196,3 +196,11 @@ header {
   color: CanvasText;
   box-shadow: 0 1rem 3rem rgb(0 0 0 / 35%);
 }
+
+.pdf-actions { display: flex; gap: 0.5rem; margin-block: 1rem; }
+.pdf-valid-badge { color: #188038; font-weight: 700; }
+.pdf-invalid-banner { color: #c0392b; font-weight: 700; }
+.pdf-cert-warning { color: #9a6700; font-weight: 600; }
+.pdf-signatures { padding-left: 1.5rem; }
+.pdf-signature { margin-block: 0.75rem; }
+.pdf-trust-caption { font-size: 0.85em; opacity: 0.8; }

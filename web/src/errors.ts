@@ -6,6 +6,7 @@ const MESSAGES: Record<string, string> = {
   "invalid request": "Invalid request",
   "invalid request: username and password are required": "Please fill in all fields",
   "internal error": "Something went wrong on the server",
+  internal_error: "Something went wrong on the server",
 
   // middleware
   "csrf token invalid": "Your session expired — please reload and try again",

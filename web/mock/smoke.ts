@@ -44,9 +44,51 @@ async function assertError(
   if (response.status !== expectedStatus) {
     throw new Error(`expected ${expectedStatus} ${expectedCode}, got ${response.status}`);
   }
-  const body = await json<{ error?: { code?: string } }>(response);
-  if (body.error?.code !== expectedCode) {
-    throw new Error(`expected error ${expectedCode}, got ${body.error?.code ?? "unknown"}`);
+  const body = await json<{ error?: string | { code?: string } }>(response);
+  const actual = typeof body.error === "string" ? body.error : body.error?.code;
+  if (actual !== expectedCode) {
+    throw new Error(`expected error ${expectedCode}, got ${actual ?? "unknown"}`);
+  }
+}
+
+function assertKeys(value: Record<string, unknown>, expected: string[], label: string): void {
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  if (actual.join(",") !== wanted.join(",")) {
+    throw new Error(`${label} keys mismatch: ${actual.join(",")}`);
+  }
+}
+
+async function verifyPDF(
+  jar: CookieJar,
+  fileId: string,
+  expectedReason: string | null,
+  signatureCount: number,
+): Promise<void> {
+  const response = await request(jar, `/api/files/${encodeURIComponent(fileId)}/verify`);
+  if (!response.ok) throw new Error(`verify ${fileId} failed: ${await response.text()}`);
+  const body = await json<{
+    signed: boolean;
+    valid: boolean;
+    reason: string | null;
+    signatures: Array<Record<string, unknown>>;
+  }>(response);
+  assertKeys(body, ["signed", "valid", "reason", "signatures"], "verify response");
+  if (body.reason !== expectedReason || body.signatures.length !== signatureCount) {
+    throw new Error(`verify ${fileId} shape/state mismatch`);
+  }
+  if (body.signed !== (signatureCount > 0) || body.valid !== (expectedReason === null)) {
+    throw new Error(`verify ${fileId} signed/valid mismatch`);
+  }
+  for (const signature of body.signatures) {
+    assertKeys(signature, ["valid", "reason", "signer", "signed_at", "certificate"], "signature");
+    const signer = signature.signer as Record<string, unknown>;
+    const certificate = signature.certificate as Record<string, unknown>;
+    assertKeys(signer, ["user_id", "username", "fingerprint"], "signer");
+    assertKeys(certificate, ["subject", "issuer", "serial", "not_before", "not_after"], "certificate");
+    if (typeof signer.fingerprint !== "string" || !/^[0-9a-f]{64}$/.test(signer.fingerprint)) {
+      throw new Error("invalid signer fingerprint");
+    }
   }
 }
 
@@ -67,6 +109,43 @@ async function main(): Promise<void> {
   await login(alice, "alice");
   await login(bob, "bob");
   await request(alice, "/mock/reset", { method: "POST" });
+
+  const aliceFilesResponse = await request(alice, "/api/files");
+  if (!aliceFilesResponse.ok) throw new Error("alice file list failed");
+  const aliceFiles = await json<{ files: Array<{ id: string; original_name: string; content_type: string }> }>(aliceFilesResponse);
+  const findFile = (name: string): { id: string; original_name: string; content_type: string } => {
+    const file = aliceFiles.files.find((row) => row.original_name === name);
+    if (!file) throw new Error(`${name} not found`);
+    return file;
+  };
+  const reportPDF = findFile("report.pdf");
+  if (reportPDF.content_type !== "application/pdf") throw new Error("report.pdf is not a PDF");
+  await verifyPDF(alice, reportPDF.id, "no_signature", 0);
+  const signed = await request(alice, `/api/files/${reportPDF.id}/sign`, { method: "POST" });
+  if (signed.status !== 200) throw new Error(`sign status ${signed.status}`);
+  const signedBody = await json<Record<string, unknown>>(signed);
+  assertKeys(signedBody, ["file_id", "signature_count", "signed_at", "signer_fingerprint"], "sign response");
+  if (signedBody.file_id !== reportPDF.id || signedBody.signature_count !== 1 ||
+      typeof signedBody.signed_at !== "string" || typeof signedBody.signer_fingerprint !== "string" ||
+      !/^[0-9a-f]{64}$/.test(signedBody.signer_fingerprint)) {
+    throw new Error("sign response shape mismatch");
+  }
+  await verifyPDF(alice, reportPDF.id, null, 1);
+  await verifyPDF(alice, findFile("signed.pdf").id, null, 1);
+  await verifyPDF(alice, findFile("tampered.pdf").id, "content_modified", 1);
+  await verifyPDF(alice, findFile("foreign.pdf").id, "unknown_signer", 1);
+  await verifyPDF(alice, findFile("multi.pdf").id, null, 2);
+
+  const notesSign = await request(alice, `/api/files/${findFile("notes.txt").id}/sign`, { method: "POST" });
+  await assertError(notesSign, 400, "invalid_content_type");
+  const unauthorizedSign = await request(bob, `/api/files/${reportPDF.id}/sign`, { method: "POST" });
+  await assertError(unauthorizedSign, 403, "forbidden");
+
+  const tamper = await request(alice, `/mock/tamper/${encodeURIComponent(findFile("signed.pdf").id)}`, {
+    method: "POST",
+  });
+  if (!tamper.ok) throw new Error(`tamper control failed: ${await tamper.text()}`);
+  await verifyPDF(alice, findFile("signed.pdf").id, "content_modified", 1);
 
   const bobFilesResponse = await request(bob, "/api/files");
   if (!bobFilesResponse.ok) throw new Error("bob file list failed");
