@@ -110,7 +110,7 @@ func contractRequest(t *testing.T, router http.Handler, method, target string, b
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	if strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
-		assertNoForbiddenKeys(t, []byte(rec.Body.String()))
+		assertNoForbiddenKeys(t, rec.Body.Bytes())
 	}
 	return rec
 }
@@ -343,7 +343,7 @@ func TestContractFiles(t *testing.T) {
 		req.Header.Set("X-CSRF-Token", contractCSRF)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
-		assertNoForbiddenKeys(t, []byte(rec.Body.String()))
+		assertNoForbiddenKeys(t, rec.Body.Bytes())
 		require.Equal(t, http.StatusCreated, rec.Code)
 		assertShape(t, decodeBody(t, rec), map[string]any{
 			"id": "uuid-string", "original_name": "string", "content_type": "string",
@@ -365,7 +365,7 @@ func TestContractFiles(t *testing.T) {
 		req.Header.Set("X-CSRF-Token", contractCSRF)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
-		assertNoForbiddenKeys(t, []byte(rec.Body.String()))
+		assertNoForbiddenKeys(t, rec.Body.Bytes())
 		require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 	})
 	t.Run("GET /api/files → 200", func(t *testing.T) {
