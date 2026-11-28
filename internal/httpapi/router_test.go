@@ -23,8 +23,9 @@ import (
 
 type fakeFileService struct {
 	uploadFn   func(ctx context.Context, ownerID uuid.UUID, reader io.Reader, contentType, originalName string) (repository.File, error)
-	listFn     func(ctx context.Context, ownerID uuid.UUID) ([]repository.File, error)
+	listFn     func(ctx context.Context, ownerID uuid.UUID) ([]files.ListedFile, error)
 	downloadFn func(ctx context.Context, id, ownerID uuid.UUID) (io.ReadCloser, repository.File, error)
+	openSharedFn func(ctx context.Context, id uuid.UUID, keysSess keys.Session) (io.ReadCloser, repository.File, error)
 	deleteFn   func(ctx context.Context, id, ownerID uuid.UUID) error
 }
 
@@ -34,7 +35,7 @@ func (f *fakeFileService) Upload(ctx context.Context, ownerID uuid.UUID, r io.Re
 	}
 	return repository.File{}, nil
 }
-func (f *fakeFileService) List(ctx context.Context, ownerID uuid.UUID) ([]repository.File, error) {
+func (f *fakeFileService) List(ctx context.Context, ownerID uuid.UUID) ([]files.ListedFile, error) {
 	if f.listFn != nil {
 		return f.listFn(ctx, ownerID)
 	}
@@ -43,6 +44,12 @@ func (f *fakeFileService) List(ctx context.Context, ownerID uuid.UUID) ([]reposi
 func (f *fakeFileService) Download(ctx context.Context, id, ownerID uuid.UUID) (io.ReadCloser, repository.File, error) {
 	if f.downloadFn != nil {
 		return f.downloadFn(ctx, id, ownerID)
+	}
+	return nil, repository.File{}, repository.ErrNotFound
+}
+func (f *fakeFileService) OpenShared(ctx context.Context, id uuid.UUID, keysSess keys.Session) (io.ReadCloser, repository.File, error) {
+	if f.openSharedFn != nil {
+		return f.openSharedFn(ctx, id, keysSess)
 	}
 	return nil, repository.File{}, repository.ErrNotFound
 }

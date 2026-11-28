@@ -92,3 +92,13 @@ func KeysSessionFromContext(ctx context.Context) (keys.Session, bool) {
 	ks, ok := ctx.Value(keysSessionKey).(keys.Session)
 	return ks, ok
 }
+
+// WithContextUser sets the user, session, and keys session on ctx (useful for tests).
+func WithContextUser(ctx context.Context, u repository.User, s *repository.Session, ks keys.Session) context.Context {
+	ctx = context.WithValue(ctx, userKey, u)
+	if s != nil {
+		ctx = context.WithValue(ctx, sessionKey, s)
+	}
+	ctx = context.WithValue(ctx, keysSessionKey, ks)
+	return ctx
+}

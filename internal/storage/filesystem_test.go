@@ -26,11 +26,9 @@ func TestFSWriteOpenDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
-	defer func() {
-		_ = rc.Close()
-	}()
 
 	data, err := io.ReadAll(rc)
+	_ = rc.Close()
 	if err != nil {
 		t.Fatalf("ReadAll failed: %v", err)
 	}

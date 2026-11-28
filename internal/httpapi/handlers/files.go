@@ -12,6 +12,7 @@ import (
 	"github.com/ilhmpbta/CypherSecurity/internal/httpapi/middleware"
 	"github.com/ilhmpbta/CypherSecurity/internal/keys"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
+	"github.com/ilhmpbta/CypherSecurity/internal/sharing"
 )
 
 type FilesHandler struct {
@@ -93,25 +94,14 @@ func (h *FilesHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files, err := h.fileSvc.List(r.Context(), user.ID)
+	filesList, err := h.fileSvc.List(r.Context(), user.ID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "list failed")
 		return
 	}
 
-	projected := make([]map[string]any, len(files))
-	for i, f := range files {
-		projected[i] = map[string]any{
-			"id":             f.ID,
-			"original_name":  f.OriginalName,
-			"content_type":   f.ContentType,
-			"plaintext_size": f.PlaintextSize,
-			"created_at":     f.CreatedAt,
-		}
-	}
-
 	respondJSON(w, http.StatusOK, map[string]any{
-		"files": projected,
+		"files": filesList,
 	})
 }
 
@@ -125,18 +115,35 @@ func (h *FilesHandler) Download(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	fileID, err := uuid.Parse(idStr)
 	if err != nil {
-		respondError(w, http.StatusNotFound, "not found")
+		respondError(w, http.StatusNotFound, "not_found")
 		return
 	}
 
+	keysSess, _ := middleware.KeysSessionFromContext(r.Context())
+
 	reader, fileMeta, err := h.fileSvc.Download(r.Context(), fileID, user.ID)
-	switch {
-	case errors.Is(err, repository.ErrNotFound):
-		respondError(w, http.StatusNotFound, "not found")
-		return
-	case err != nil:
-		respondError(w, http.StatusInternalServerError, "download failed")
-		return
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			sharedReader, sharedMeta, sharedErr := h.fileSvc.OpenShared(r.Context(), fileID, keysSess)
+			if sharedErr != nil {
+				switch {
+				case errors.Is(sharedErr, keys.ErrSessionLocked):
+					respondError(w, http.StatusUnauthorized, "reauth_required")
+				case errors.Is(sharedErr, files.ErrForbidden) || errors.Is(sharedErr, sharing.ErrForbidden):
+					respondError(w, http.StatusForbidden, "forbidden")
+				case errors.Is(sharedErr, repository.ErrNotFound):
+					respondError(w, http.StatusNotFound, "not_found")
+				default:
+					respondError(w, http.StatusInternalServerError, "download failed")
+				}
+				return
+			}
+			reader = sharedReader
+			fileMeta = sharedMeta
+		} else {
+			respondError(w, http.StatusInternalServerError, "download failed")
+			return
+		}
 	}
 
 	if reader == nil {

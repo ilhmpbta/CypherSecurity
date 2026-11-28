@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt" // ← added
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -23,6 +23,7 @@ import (
 	"github.com/ilhmpbta/CypherSecurity/internal/migrations"
 	"github.com/ilhmpbta/CypherSecurity/internal/records"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository/postgres"
+	"github.com/ilhmpbta/CypherSecurity/internal/sharing"
 	"github.com/ilhmpbta/CypherSecurity/internal/storage"
 )
 
@@ -72,13 +73,15 @@ func run() error {
 	auditRepo := postgres.NewAuditRepo(pool)
 	sessionRepo := postgres.NewSessionRepo(pool)
 	keypairRepo := postgres.NewUserKeypairRepo(pool)
+	shareRepo := postgres.NewShareRepo(pool)
 
 	// Services
 	auditLogger := audit.NewLogger(auditRepo)
 	sessionStore := auth.NewSessionStore(sessionRepo)
 	authSvc := auth.NewService(userRepo, sessionStore, auditLogger)
 	keysSvc := keys.NewDBService(keypairRepo, userRepo)
-	fileSvc := files.NewService(fileRepo, fs, km, auditLogger, files.WithKeysService(keysSvc))
+	sharingSvc := sharing.NewService(shareRepo, fileRepo, km, keysSvc, auditLogger)
+	fileSvc := files.NewService(fileRepo, fs, km, auditLogger, files.WithKeysService(keysSvc), files.WithSharingService(sharingSvc))
 	recordSvc := records.NewService(recordRepo)
 
 	// Router
@@ -87,6 +90,7 @@ func run() error {
 		FileSvc:      fileSvc,
 		RecordSvc:    recordSvc,
 		AuditSvc:     auditLogger,
+		SharingSvc:   sharingSvc,
 		KeysSvc:      keysSvc,
 		UserRepo:     userRepo,
 		SessionStore: sessionStore,
@@ -118,10 +122,8 @@ func run() error {
 		log.Println("cyphersecurity: shutting down")
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown: %w", err)
-	}
-	return nil
+
+	return srv.Shutdown(shutdownCtx)
 }

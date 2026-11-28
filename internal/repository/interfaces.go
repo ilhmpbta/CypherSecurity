@@ -82,7 +82,9 @@ type UserRepo interface {
 type FileRepo interface {
 	Create(ctx context.Context, f File) (File, error)
 	GetByIDForOwner(ctx context.Context, id, ownerID uuid.UUID) (File, error)
+	GetByID(ctx context.Context, id uuid.UUID) (File, error)
 	ListByOwner(ctx context.Context, ownerID uuid.UUID) ([]File, error)
+	ListAll(ctx context.Context) ([]File, error)
 	DeleteByOwner(ctx context.Context, id, ownerID uuid.UUID) error
 	UpdateForOwner(ctx context.Context, f File) (File, error)
 }
@@ -112,4 +114,45 @@ type UserKeypairRepo interface {
 	Create(ctx context.Context, kp UserKeypair) (UserKeypair, error)
 	GetByUserID(ctx context.Context, userID uuid.UUID) (UserKeypair, error)
 	GetByFingerprint(ctx context.Context, fingerprint string) (UserKeypair, error)
+}
+
+type ShareRecord struct {
+	ID                   uuid.UUID
+	FileID               uuid.UUID
+	FileName             string
+	OwnerID              uuid.UUID
+	OwnerUsername        string
+	OwnerFingerprint     string
+	RequesterID          uuid.UUID
+	RequesterUsername    string
+	RequesterFingerprint string
+	Status               string
+	Note                 *string
+	RequestedAt          time.Time
+	DecidedAt            *time.Time
+	DeliveredAt          *time.Time
+	ImportedAt           *time.Time
+	RevokedAt            *time.Time
+}
+
+type ShareKey struct {
+	ID             uuid.UUID
+	ShareRequestID uuid.UUID
+	FileID         uuid.UUID
+	WrappedDEK     []byte
+	CreatedAt      time.Time
+}
+
+type ShareRepo interface {
+	CreateRequest(ctx context.Context, req ShareRecord) (ShareRecord, error)
+	GetRequestByID(ctx context.Context, id uuid.UUID) (ShareRecord, error)
+	GetPendingRequest(ctx context.Context, fileID, requesterID uuid.UUID) (ShareRecord, error)
+	ListInbox(ctx context.Context, ownerID uuid.UUID, status string) ([]ShareRecord, error)
+	ListOutgoing(ctx context.Context, requesterID uuid.UUID, status string) ([]ShareRecord, error)
+	UpdateRequest(ctx context.Context, req ShareRecord) error
+	ApproveShare(ctx context.Context, requestID uuid.UUID, decidedAt time.Time, wrappedDEK []byte) (ShareRecord, error)
+	GetKeyByRequestID(ctx context.Context, requestID uuid.UUID) (ShareKey, error)
+	GetActiveShare(ctx context.Context, requesterID, fileID uuid.UUID) (ShareRecord, ShareKey, error)
+	GetPendingCountsByOwner(ctx context.Context, ownerID uuid.UUID) (map[uuid.UUID]int, error)
+	GetRequesterShares(ctx context.Context, requesterID uuid.UUID) ([]ShareRecord, error)
 }

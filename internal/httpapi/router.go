@@ -20,6 +20,7 @@ type Deps struct {
 	FileSvc      handlers.FileService
 	RecordSvc    handlers.RecordService
 	AuditSvc     handlers.AuditService
+	SharingSvc   handlers.SharingService
 	KeysSvc      keys.Service
 	UserRepo     repository.UserRepo
 	SessionStore middleware.SessionStore
@@ -48,6 +49,10 @@ func NewRouter(deps Deps) http.Handler {
 	filesHandler := handlers.NewFilesHandler(deps.FileSvc, multipartRAMBuffer)
 	recordsHandler := handlers.NewRecordsHandler(deps.RecordSvc)
 	auditHandler := handlers.NewAuditHandler(deps.AuditSvc)
+	var sharesHandler *handlers.SharesHandler
+	if deps.SharingSvc != nil {
+		sharesHandler = handlers.NewSharesHandler(deps.SharingSvc)
+	}
 
 	mux := http.NewServeMux()
 
@@ -94,6 +99,18 @@ func NewRouter(deps Deps) http.Handler {
 	apiMux.Handle("DELETE /api/files/{id}", apply(http.HandlerFunc(filesHandler.Delete), sessionMW))
 	apiMux.Handle("POST /api/files/{id}/sign", apply(http.HandlerFunc(filesHandler.Sign), sessionMW))
 	apiMux.Handle("GET /api/files/{id}/verify", apply(http.HandlerFunc(filesHandler.Verify), sessionMW))
+
+	// Sharing routes
+	if sharesHandler != nil {
+		apiMux.Handle("POST /api/shares", apply(http.HandlerFunc(sharesHandler.CreateRequest), jsonBodyMW, sessionMW))
+		apiMux.Handle("GET /api/shares/inbox", apply(http.HandlerFunc(sharesHandler.ListInbox), sessionMW))
+		apiMux.Handle("GET /api/shares/outgoing", apply(http.HandlerFunc(sharesHandler.ListOutgoing), sessionMW))
+		apiMux.Handle("POST /api/shares/{id}/approve", apply(http.HandlerFunc(sharesHandler.Approve), sessionMW))
+		apiMux.Handle("POST /api/shares/{id}/reject", apply(http.HandlerFunc(sharesHandler.Reject), sessionMW))
+		apiMux.Handle("POST /api/shares/{id}/revoke", apply(http.HandlerFunc(sharesHandler.Revoke), sessionMW))
+		apiMux.Handle("GET /api/shares/{id}/export", apply(http.HandlerFunc(sharesHandler.Export), sessionMW))
+		apiMux.Handle("POST /api/shares/import", apply(http.HandlerFunc(sharesHandler.Import), sessionMW))
+	}
 
 	// Record routes
 	apiMux.Handle("GET /api/records", apply(http.HandlerFunc(recordsHandler.List), sessionMW))

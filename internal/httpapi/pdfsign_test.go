@@ -40,12 +40,26 @@ func (m *memoryFileRepo) GetByIDForOwner(ctx context.Context, id, ownerID uuid.U
 	}
 	return f, nil
 }
+func (m *memoryFileRepo) GetByID(ctx context.Context, id uuid.UUID) (repository.File, error) {
+	f, ok := m.items[id]
+	if !ok {
+		return repository.File{}, repository.ErrNotFound
+	}
+	return f, nil
+}
 func (m *memoryFileRepo) ListByOwner(ctx context.Context, ownerID uuid.UUID) ([]repository.File, error) {
 	var list []repository.File
 	for _, f := range m.items {
 		if f.OwnerID == ownerID {
 			list = append(list, f)
 		}
+	}
+	return list, nil
+}
+func (m *memoryFileRepo) ListAll(ctx context.Context) ([]repository.File, error) {
+	var list []repository.File
+	for _, f := range m.items {
+		list = append(list, f)
 	}
 	return list, nil
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -14,12 +15,34 @@ import (
 	"github.com/ilhmpbta/CypherSecurity/internal/keys"
 	"github.com/ilhmpbta/CypherSecurity/internal/pdfsign"
 	"github.com/ilhmpbta/CypherSecurity/internal/repository"
+	"github.com/ilhmpbta/CypherSecurity/internal/sharing"
 	"github.com/ilhmpbta/CypherSecurity/internal/storage"
+)
+
+var (
+	ErrForbidden = errors.New("forbidden")
 )
 
 // AuditLogger defines the interface for recording audit events.
 type AuditLogger interface {
 	Log(ctx context.Context, e repository.AuditEvent) error
+}
+
+type SharingService interface {
+	GetActiveShare(ctx context.Context, requesterID, fileID uuid.UUID) (*sharing.ActiveShare, error)
+	GetSharingMeta(ctx context.Context, userID uuid.UUID, files []repository.File) (map[uuid.UUID]sharing.FileShareMeta, error)
+}
+
+type ListedFile struct {
+	ID                   uuid.UUID  `json:"id"`
+	OriginalName         string     `json:"original_name"`
+	ContentType          string     `json:"content_type"`
+	PlaintextSize        int64      `json:"plaintext_size"`
+	CreatedAt            time.Time  `json:"created_at"`
+	Access               string     `json:"access"`
+	MyPendingRequestID   *uuid.UUID `json:"my_pending_request_id"`
+	PendingRequestsCount int        `json:"pending_requests_count"`
+	ShareState           string     `json:"share_state,omitempty"`
 }
 
 // Service orchestrates upload, download, and authorization.
@@ -28,6 +51,7 @@ type Service struct {
 	fs          *storage.FS
 	km          *production.KeyManager
 	keysSvc     keys.Service
+	sharingSvc  SharingService
 	auditLogger AuditLogger
 	now         func() time.Time
 }
@@ -37,6 +61,12 @@ type ServiceOption func(*Service)
 func WithKeysService(keysSvc keys.Service) ServiceOption {
 	return func(s *Service) {
 		s.keysSvc = keysSvc
+	}
+}
+
+func WithSharingService(sharingSvc SharingService) ServiceOption {
+	return func(s *Service) {
+		s.sharingSvc = sharingSvc
 	}
 }
 
@@ -216,6 +246,61 @@ func (s *Service) Download(ctx context.Context, id, ownerID uuid.UUID) (io.ReadC
 	return rc, file, nil
 }
 
+func (s *Service) OpenShared(ctx context.Context, fileID uuid.UUID, sess keys.Session) (io.ReadCloser, repository.File, error) {
+	if len(sess.WrapKey) == 0 {
+		return nil, repository.File{}, keys.ErrSessionLocked
+	}
+	if s.keysSvc == nil {
+		return nil, repository.File{}, errors.New("keys service not configured")
+	}
+	if s.sharingSvc == nil {
+		return nil, repository.File{}, ErrForbidden
+	}
+
+	file, err := s.repo.GetByID(ctx, fileID)
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+
+	active, err := s.sharingSvc.GetActiveShare(ctx, sess.UserID, fileID)
+	if err != nil {
+		return nil, repository.File{}, ErrForbidden
+	}
+
+	dek, err := s.keysSvc.UnwrapForRequester(ctx, sess, active.WrappedDEK)
+	if err != nil {
+		return nil, repository.File{}, fmt.Errorf("unwrap dek for requester: %w", err)
+	}
+
+	blobReader, err := s.fs.Open(file.StorageKey)
+	if err != nil {
+		return nil, repository.File{}, err
+	}
+
+	decryptR, err := production.NewReader(blobReader, dek)
+	if err != nil {
+		_ = blobReader.Close()
+		return nil, repository.File{}, err
+	}
+
+	if s.auditLogger != nil {
+		targetID := file.ID.String()
+		_ = s.auditLogger.Log(ctx, repository.AuditEvent{
+			ActorID:  &sess.UserID,
+			Action:   "files.download_shared",
+			TargetID: &targetID,
+			Metadata: map[string]any{"original_name": file.OriginalName},
+		})
+	}
+
+	rc := &decryptReadCloser{
+		Reader: decryptR,
+		closer: blobReader,
+	}
+
+	return rc, file, nil
+}
+
 type decryptReadCloser struct {
 	io.Reader
 	closer io.Closer
@@ -225,8 +310,57 @@ func (drc *decryptReadCloser) Close() error {
 	return drc.closer.Close()
 }
 
-func (s *Service) List(ctx context.Context, ownerID uuid.UUID) ([]repository.File, error) {
-	return s.repo.ListByOwner(ctx, ownerID)
+func (s *Service) List(ctx context.Context, userID uuid.UUID) ([]ListedFile, error) {
+	var (
+		rawFiles []repository.File
+		err      error
+	)
+	if s.sharingSvc != nil {
+		rawFiles, err = s.repo.ListAll(ctx)
+	} else {
+		rawFiles, err = s.repo.ListByOwner(ctx, userID)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var metaMap map[uuid.UUID]sharing.FileShareMeta
+	if s.sharingSvc != nil && len(rawFiles) > 0 {
+		metaMap, err = s.sharingSvc.GetSharingMeta(ctx, userID, rawFiles)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	out := make([]ListedFile, len(rawFiles))
+	for i, f := range rawFiles {
+		access := "owner"
+		var myPendingID *uuid.UUID
+		pendingCount := 0
+		shareState := "none"
+
+		if meta, ok := metaMap[f.ID]; ok {
+			access = meta.Access
+			myPendingID = meta.MyPendingRequestID
+			pendingCount = meta.PendingRequestsCount
+			shareState = meta.ShareState
+		} else if f.OwnerID != userID {
+			access = "shared"
+		}
+
+		out[i] = ListedFile{
+			ID:                   f.ID,
+			OriginalName:         f.OriginalName,
+			ContentType:          f.ContentType,
+			PlaintextSize:        f.PlaintextSize,
+			CreatedAt:            f.CreatedAt,
+			Access:               access,
+			MyPendingRequestID:   myPendingID,
+			PendingRequestsCount: pendingCount,
+			ShareState:           shareState,
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) Delete(ctx context.Context, id, ownerID uuid.UUID) error {

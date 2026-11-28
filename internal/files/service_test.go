@@ -46,6 +46,16 @@ func (f *fakeFileRepo) GetByIDForOwner(ctx context.Context, id, ownerID uuid.UUI
 	return file, nil
 }
 
+func (f *fakeFileRepo) GetByID(ctx context.Context, id uuid.UUID) (repository.File, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	file, ok := f.files[id]
+	if !ok {
+		return repository.File{}, repository.ErrNotFound
+	}
+	return file, nil
+}
+
 func (f *fakeFileRepo) ListByOwner(ctx context.Context, ownerID uuid.UUID) ([]repository.File, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -54,6 +64,16 @@ func (f *fakeFileRepo) ListByOwner(ctx context.Context, ownerID uuid.UUID) ([]re
 		if file.OwnerID == ownerID {
 			list = append(list, file)
 		}
+	}
+	return list, nil
+}
+
+func (f *fakeFileRepo) ListAll(ctx context.Context) ([]repository.File, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var list []repository.File
+	for _, file := range f.files {
+		list = append(list, file)
 	}
 	return list, nil
 }
